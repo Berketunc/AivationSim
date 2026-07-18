@@ -64,7 +64,7 @@ class LandingControllerNode(Node):
         self.declare_parameter('takeoff_altitude_m', 5.0)
         self.declare_parameter('search_timeout_s', 30.0)
         self.declare_parameter('lost_timeout_s', 2.0)
-        self.declare_parameter('mavsdk_address', 'udpin://:14540')
+        self.declare_parameter('mavsdk_address', 'udpin://0.0.0.0:14540')
         self.declare_parameter('timer_hz', 20.0)
 
         kp = self.get_parameter('pi_kp').value

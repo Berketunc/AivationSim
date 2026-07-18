@@ -18,7 +18,7 @@ from mavsdk.offboard import VelocityBodyYawspeed
 
 class MavsdkBridge:
 
-    def __init__(self, system_address: str = 'udpin://:14540'):
+    def __init__(self, system_address: str = 'udpin://0.0.0.0:14540'):
         self.system_address = system_address
         self._drone = System()
         self._offboard_active = False

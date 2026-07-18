@@ -22,5 +22,5 @@ landing_controller_node:
     lost_timeout_s: 2.0         # s — revert to SEARCH if marker disappears
 
     # Transport
-    mavsdk_address: 'udpin://:14540'
+    mavsdk_address: 'udpin://0.0.0.0:14540'
     timer_hz: 20.0
