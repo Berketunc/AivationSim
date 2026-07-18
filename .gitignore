@@ -1,0 +1,34 @@
+# ROS 2 colcon build artifacts
+precision_landing_ws/build/
+precision_landing_ws/install/
+precision_landing_ws/log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+*.so
+
+# ROS log files
+~/.ros/log/
+log/
+*.log
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PX4 (if ever added to this repo)
+PX4-Autopilot/
+
+# Gazebo
+~/.gz/

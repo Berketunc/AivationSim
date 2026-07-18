@@ -1,0 +1,26 @@
+landing_controller_node:
+  ros__parameters:
+    # Horizontal PI gains (tune first: increase kp until oscillation, back off ~20%)
+    pi_kp: 0.5
+    pi_ki: 0.05
+    pi_integral_max: 0.5        # m/s — anti-windup clamp on each axis
+    horizontal_vel_max: 1.0     # m/s — hard cap on vx / vy output
+
+    # Descent
+    descend_vel: 0.3            # m/s downward (positive = down in FRD body frame)
+
+    # Alignment gating (mirrors PX4's PLD_HACC_RAD concept)
+    hacc_radius_m: 0.20         # m — horizontal error threshold
+    n_frames_aligned: 10        # consecutive frames within hacc_radius → enter DESCEND
+
+    # Altitude thresholds
+    final_land_alt_m: 0.5       # m — AGL (from solvePnP tvec.z) to hand off to Action.land()
+    takeoff_altitude_m: 5.0     # m relative — MAVSDK Action.takeoff() target
+
+    # Timeouts / failsafes
+    search_timeout_s: 30.0      # s — abort to GPS land if no marker seen
+    lost_timeout_s: 2.0         # s — revert to SEARCH if marker disappears
+
+    # Transport
+    mavsdk_address: 'udpin://:14540'
+    timer_hz: 20.0
