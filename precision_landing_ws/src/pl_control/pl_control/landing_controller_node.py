@@ -62,7 +62,9 @@ class LandingControllerNode(Node):
         self.declare_parameter('n_frames_aligned', 10)
         self.declare_parameter('final_land_alt_m', 0.5)
         self.declare_parameter('takeoff_altitude_m', 5.0)
-        self.declare_parameter('search_timeout_s', 30.0)
+        self.declare_parameter('scan_speed_ms', 0.5)
+        self.declare_parameter('scan_step_m', 2.0)
+        self.declare_parameter('search_timeout_s', 60.0)
         self.declare_parameter('lost_timeout_s', 2.0)
         self.declare_parameter('mavsdk_address', 'udpin://0.0.0.0:14540')
         self.declare_parameter('timer_hz', 20.0)
@@ -80,6 +82,10 @@ class LandingControllerNode(Node):
         self.n_aligned_required: int = self.get_parameter('n_frames_aligned').value
         self.final_land_alt: float = self.get_parameter('final_land_alt_m').value
         self.takeoff_alt: float = self.get_parameter('takeoff_altitude_m').value
+        scan_speed: float = self.get_parameter('scan_speed_ms').value
+        scan_step_m: float = self.get_parameter('scan_step_m').value
+        self.scan_speed: float = scan_speed
+        self._scan_step_s: float = scan_step_m / scan_speed
         self.search_timeout: float = self.get_parameter('search_timeout_s').value
         self.lost_timeout: float = self.get_parameter('lost_timeout_s').value
         mavsdk_addr: str = self.get_parameter('mavsdk_address').value
@@ -161,9 +167,10 @@ class LandingControllerNode(Node):
 
     # ── per-state handlers ────────────────────────────────────────────────────
 
-    def _do_search(self, now: float):
-        self.bridge.send_velocity_body(0.0, 0.0, 0.0, 0.0)
+    # Body-frame unit vectors for expanding square: forward, right, back, left
+    _SCAN_DIRS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
 
+    def _do_search(self, now: float):
         if self.is_visible and self.target_pose is not None:
             self._enter(State.ALIGN)
             return
@@ -173,6 +180,26 @@ class LandingControllerNode(Node):
                 f'SEARCH timeout ({self.search_timeout}s) — aborting to GPS land.'
             )
             self._abort_land()
+            return
+
+        # Expanding square: leg n lasts (n//2 + 1) * _scan_step_s seconds.
+        # Sequence of durations (in units of step_s): 1,1, 2,2, 3,3, 4,4, …
+        elapsed = now - self.state_entry_time
+        leg, t = 0, 0.0
+        while True:
+            leg_dur = (leg // 2 + 1) * self._scan_step_s
+            if t + leg_dur > elapsed:
+                break
+            t += leg_dur
+            leg += 1
+
+        dx, dy = self._SCAN_DIRS[leg % 4]
+        vx, vy = dx * self.scan_speed, dy * self.scan_speed
+        self.bridge.send_velocity_body(vx, vy, 0.0, 0.0)
+
+        self.get_logger().debug(
+            f'SEARCH  leg={leg} elapsed={elapsed:.1f}s vx={vx:+.2f} vy={vy:+.2f}'
+        )
 
     def _do_align(self, now: float, dt: float):
         if not self._marker_visible(now):

@@ -38,7 +38,7 @@ trap cleanup EXIT INT TERM
 # ── 1. PX4 + Gazebo ───────────────────────────────────────────────────────────
 echo "[1/2] starting PX4 SITL + Gazebo Harmonic (world: aruco)…"
 > "$PX4_LOG"
-( cd "$PX4_DIR" && PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down ) \
+( cd "$PX4_DIR" && PX4_GZ_WORLD=aruco PX4_GZ_MODEL_POSE="5,0,0,0,0,0" make px4_sitl gz_x500_mono_cam_down ) \
     2>&1 | tee "$PX4_LOG" &
 
 echo "[1/2] waiting for PX4 MAVLink to come up (up to 60 s)…"

@@ -17,8 +17,12 @@ landing_controller_node:
     final_land_alt_m: 0.5       # m — AGL (from solvePnP tvec.z) to hand off to Action.land()
     takeoff_altitude_m: 5.0     # m relative — MAVSDK Action.takeoff() target
 
+    # Active scan (expanding square)
+    scan_speed_ms: 0.5           # m/s — speed during search legs
+    scan_step_m: 2.0             # m — first leg length; each pair of legs grows by this
+
     # Timeouts / failsafes
-    search_timeout_s: 30.0      # s — abort to GPS land if no marker seen
+    search_timeout_s: 60.0      # s — abort to GPS land if no marker seen
     lost_timeout_s: 2.0         # s — revert to SEARCH if marker disappears
 
     # Transport
