@@ -119,7 +119,7 @@ Then, with the sim running: `gz topic -l | grep scan` / `gz topic -e -t /scan/po
 to see the live point cloud (the LiDAR sensor uses lazy publishing, so the
 topic only appears once something subscribes to it).
 
-## Optional: real-hardware test (⚠️ tentative — not attempted, not committed to)
+## Optional: real-hardware test (not attempted, not committed to)
 
 Everything above is simulation only. Moving any of it onto real hardware is a
 substantial, separate effort with real safety/legal/cost stakes that
@@ -153,12 +153,6 @@ flowchart LR
   which means the occupancy-mapping node would need to consume depth-camera
   point clouds instead of the 360° LiDAR sweep, a real (if contained) change
   from what Milestone 2 builds in sim.
-- **Safety, non-negotiable for any first attempt:**
-  - Tethered indoor hover or prop-guarded bench test only — no untethered or
-    outdoor flight until each step below has passed individually.
-  - A human safety pilot on a separate RC transmitter with override authority
-    at all times.
-  - Hard geofence + kill switch armed before every test.
 - **Suggested validation ladder** (each step must pass before the next):
   1. **Bench test, props off:** run perception + mapping + planning against
      the real depth camera, verify the occupancy map and planned path look
