@@ -15,5 +15,12 @@
       <child>lidar_link</child>
       <pose relative_to="base_link">0 0 .12 0 0 0</pose>
     </joint>
+    <!-- Ground-truth pose for oa_bringup; not present on the base x500,
+         only on variants (e.g. x500_vision) that explicitly add it. -->
+    <plugin
+      filename="gz-sim-odometry-publisher-system"
+      name="gz::sim::systems::OdometryPublisher">
+      <dimensions>3</dimensions>
+    </plugin>
   </model>
 </sdf>
