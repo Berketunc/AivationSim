@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version="1.9">
+  <world name="warehouse">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg> 8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <!--
+      Bounded room: 20m (x: -10..10) x 14m (y: -7..7), wall height 3.5m.
+      Three staggered rows of pillars (x=-5, x=0, x=5) force an S-curve:
+      row A and row C leave a gap on the +y side, row B leaves a gap on
+      the -y side, so a straight-line flight from (-9,0) to (9,0) collides
+      with all three rows and a real planner has to weave.
+    -->
+    <model name="warehouse_walls">
+      <static>true</static>
+      <link name="north">
+        <pose>0 7 1.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>20.4 0.2 3.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20.4 0.2 3.5</size></box></geometry>
+          <material>
+            <ambient>0.75 0.75 0.75 1</ambient>
+            <diffuse>0.75 0.75 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="south">
+        <pose>0 -7 1.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>20.4 0.2 3.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20.4 0.2 3.5</size></box></geometry>
+          <material>
+            <ambient>0.75 0.75 0.75 1</ambient>
+            <diffuse>0.75 0.75 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="east">
+        <pose>10 0 1.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.2 14 3.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 14 3.5</size></box></geometry>
+          <material>
+            <ambient>0.75 0.75 0.75 1</ambient>
+            <diffuse>0.75 0.75 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="west">
+        <pose>-10 0 1.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.2 14 3.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 14 3.5</size></box></geometry>
+          <material>
+            <ambient>0.75 0.75 0.75 1</ambient>
+            <diffuse>0.75 0.75 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Row A: x=-5, gap on +y side (y > 3) -->
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a0</name><pose>-5 -6.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a1</name><pose>-5 -4.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a2</name><pose>-5 -3.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a3</name><pose>-5 -1.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a4</name><pose>-5  0.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a5</name><pose>-5  1.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a6</name><pose>-5  3.0 1.5 0 0 0</pose></include>
+
+    <!-- Row B: x=0, gap on -y side (y < -3) -->
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b0</name><pose>0 -3.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b1</name><pose>0 -1.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b2</name><pose>0  0.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b3</name><pose>0  1.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b4</name><pose>0  3.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b5</name><pose>0  4.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b6</name><pose>0  6.0 1.5 0 0 0</pose></include>
+
+    <!-- Row C: x=5, gap on +y side (y > 3) -->
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c0</name><pose>5 -6.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c1</name><pose>5 -4.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c2</name><pose>5 -3.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c3</name><pose>5 -1.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c4</name><pose>5  0.0 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c5</name><pose>5  1.5 1.5 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c6</name><pose>5  3.0 1.5 0 0 0</pose></include>
+  </world>
+</sdf>
