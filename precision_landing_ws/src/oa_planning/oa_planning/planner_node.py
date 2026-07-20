@@ -27,6 +27,7 @@ class PlannerNode(Node):
         self.declare_parameter('size', [20.0, 14.0, 3.5])
         self.declare_parameter('goal', [9.0, 0.0, 1.5])
         self.declare_parameter('replan_period_s', 2.0)
+        self.declare_parameter('inflation_radius_m', 0.3)
         self.declare_parameter('cloud_topic', '/octomap_point_cloud_centers')
         self.declare_parameter('odom_topic', '/oa/odom')
         self.declare_parameter('goal_topic', '/oa/goal_pose')
@@ -35,7 +36,8 @@ class PlannerNode(Node):
         resolution = self.get_parameter('resolution').value
         origin = tuple(self.get_parameter('origin').value)
         size = tuple(self.get_parameter('size').value)
-        self._grid = OccupancyGrid3D(origin, size, resolution)
+        inflation_radius_m = self.get_parameter('inflation_radius_m').value
+        self._grid = OccupancyGrid3D(origin, size, resolution, inflation_radius_m)
 
         self._goal = tuple(self.get_parameter('goal').value)
         self._current_pos = None
@@ -72,18 +74,31 @@ class PlannerNode(Node):
         if self._current_pos is None:
             return
 
+        # Expensive (O(occupied cells * offsets)) — do it once per replan,
+        # not on every point-cloud callback.
+        self._grid.refresh_inflation()
+
         start_idx = self._grid.world_to_index(self._current_pos)
         goal_idx = self._grid.world_to_index(self._goal)
 
         path_idx = astar.plan(start_idx, goal_idx, self._grid)
-        if path_idx is None:
-            self.get_logger().warn(
-                f'No path found from {self._current_pos} to {self._goal}')
-            return
 
         path_msg = Path()
         path_msg.header.frame_id = self._frame_id or 'map'
         path_msg.header.stamp = self.get_clock().now().to_msg()
+
+        if path_idx is None:
+            # Publish an EMPTY path rather than just warning and returning.
+            # path_follower_node already treats "no poses" as "hold position
+            # now" — without this, a failed replan left it blindly executing
+            # whatever stale path it had, which could already be running
+            # through territory the map has since learned is occupied.
+            self.get_logger().warn(
+                f'No path found from {self._current_pos} to {self._goal} — '
+                f'publishing empty path so the follower stops.')
+            self._path_pub.publish(path_msg)
+            return
+
         for idx in path_idx:
             x, y, z = self._grid.index_to_world(idx)
             pose = PoseStamped()

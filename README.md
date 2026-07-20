@@ -96,8 +96,10 @@ flowchart LR
     PX4_2 <--> GZ_2["Gazebo (warehouse world)"]
 ```
 
-A custom `warehouse.sdf` world (three staggered rows of pillars forcing an
-S-curve, inside a bounded room) and an `x500_3d_lidar` vehicle model (a 16-channel,
+A custom `warehouse.sdf` world (three rows of pillars in a bounded room, each
+row's gaps offset from the next so flying straight through one row's gap
+always puts a pillar from the next row directly ahead — a proper slalom, not
+a single detour) and an `x500_3d_lidar` vehicle model (a 16-channel,
 360°, gpu_lidar sensor mounted on the standard PX4 x500 quad) give the drone
 something real to navigate around. `oa_bringup` bridges the LiDAR's point
 cloud and the current pose estimate into ROS 2; `octomap_server` folds that
@@ -113,7 +115,7 @@ the navigation logic.
 ```bash
 bash scripts/link_gz_assets.sh
 cd ~/PX4-Autopilot
-PX4_GZ_WORLD=warehouse PX4_GZ_MODEL_POSE="-9,0,0.2,0,0,0" make px4_sitl gz_x500_3d_lidar
+PX4_GZ_WORLD=warehouse PX4_GZ_MODEL_POSE="-8.5,0,0.2,0,0,0" make px4_sitl gz_x500_3d_lidar
 ```
 Then, with the sim running: `gz topic -l | grep scan` / `gz topic -e -t /scan/points`
 to see the live point cloud (the LiDAR sensor uses lazy publishing, so the

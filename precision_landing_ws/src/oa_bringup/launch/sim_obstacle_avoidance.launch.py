@@ -3,8 +3,11 @@ Launch file for the obstacle-avoidance sensor/pose bridging stack.
 
 PX4 + Gazebo are started separately:
     cd ~/PX4-Autopilot
-    PX4_GZ_WORLD=warehouse PX4_GZ_MODEL_POSE="-9,0,0.2,0,0,0" \\
+    PX4_GZ_WORLD=warehouse PX4_GZ_MODEL_POSE="-8.5,0,0.2,0,0,0" \\
         make px4_sitl gz_x500_3d_lidar
+
+(-8.5, not -9: see oa_planning's planner_params.yaml `goal` comment for why
+spawn/goal need real clearance from the walls, not just from the pillars.)
 
 Then launch this file:
     ros2 launch oa_bringup sim_obstacle_avoidance.launch.py

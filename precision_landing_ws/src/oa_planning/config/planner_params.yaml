@@ -10,9 +10,42 @@ oa_planning_node:
     size: [20.0, 14.0, 3.5]
 
     # Default goal: past all three pillar rows, roughly opposite the drone's
-    # -9,0,0.2 spawn pose from sim_obstacle_avoidance.launch.py's companion
-    # PX4_GZ_MODEL_POSE. Override at runtime via the goal_topic instead of
+    # -8.5,0,0.2 spawn pose from sim_obstacle_avoidance.launch.py's companion
+    # PX4_GZ_MODEL_POSE. Both are 8.5, not 9, deliberately: the walls are
+    # inflated too, and at 9 (only 1.0m from a wall whose inner face is 0.1m
+    # inside x=+-10) the inflation margin can reach past the spawn/goal point
+    # itself, making start or goal "occupied" and unreachable by
+    # construction — this happened for real with the previous 1.0m inflation
+    # radius. 8.5 keeps a comfortable margin regardless of the exact
+    # inflation value. Override at runtime via the goal_topic instead of
     # editing this for one-off goals.
-    goal: [9.0, 0.0, 1.5]
+    goal: [8.5, 0.0, 1.5]
 
-    replan_period_s: 2.0
+    # A full room-length search (start far from goal) benchmarks at ~0.6s, so
+    # much below ~1s just means the timer runs back-to-back at whatever the
+    # search actually takes rather than truly hitting the nominal period —
+    # ROS2 doesn't stack overlapping timer callbacks, it just fires the next
+    # one as soon as the current one returns. 1.0s (was 2.0s) halves the
+    # worst-case distance travelled on a stale path before the next replan.
+    replan_period_s: 1.0
+
+    # Grown around every mapped occupied cell before planning. Without this,
+    # A* treats a path as clear the instant it's outside a pillar's own
+    # voxel — but the vehicle isn't a point, so a "clear" path could still
+    # clip it within the airframe's own rotor radius.
+    #
+    # Earlier layout had pillars 1.5m apart within a row (1.1m raw gap), and
+    # no inflation value reliably closed that: 0.3 left it technically
+    # "passable" so A* kept threading it over the deliberately wide detour;
+    # bumping to 1.0 to fully close it then made the *spawn/goal* points
+    # fall inside the inflated west/east walls instead (they were only 1m
+    # from a wall). The current warehouse.sdf fixes this at the source
+    # instead of by tuning this number further: pillars within a row are now
+    # 3m apart (2.6m raw gap) specifically so the vehicle is meant to fly
+    # between them, and spawn/goal (see the `goal` param above) sit with
+    # comfortable clearance from the walls. 0.6 here just needs to cover the
+    # airframe's rotor radius against that much wider gap — 2.6 - 2*0.6 =
+    # 1.4m of clear passage, comfortable margin either way. Benchmarked at
+    # <0.1s for a full map (see refresh_inflation()'s docstring for why it's
+    # a plain loop, not vectorized), well inside the 1s replan budget.
+    inflation_radius_m: 0.6

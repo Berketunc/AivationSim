@@ -4,8 +4,23 @@ path_follower_node:
     # vehicle levels off within the planned grid's height range immediately.
     takeoff_altitude_m: 1.5
 
-    cruise_speed_ms: 0.8
-    waypoint_reached_radius_m: 0.3
+    # Slower than a first-pass tuning would pick, deliberately: the planner
+    # replans on a ~1s cadence (a full room-length A* search takes ~0.6s), so
+    # at 0.8 m/s the vehicle could cover up to ~0.8m of a since-stale path
+    # before the next update — more than the ~0.3-0.5m gaps this can leave
+    # near inflated obstacles. 0.4 m/s keeps that worst-case distance small
+    # relative to the map's own resolution and margin.
+    cruise_speed_ms: 0.4
+
+    # Must be smaller than the smallest gap between consecutive A* waypoints
+    # (26-connected moves at 0.2m resolution: 0.2m axis-aligned, up to 0.346m
+    # diagonal). 0.3 was letting the follower treat 2+ upcoming waypoints as
+    # "already reached" in a single tick and jump straight to a farther one —
+    # a straight line between two non-adjacent waypoints can cut a corner
+    # near a tight squeeze even though each waypoint individually clears the
+    # inflated obstacles (this produced a real 0.037m near-miss in testing).
+    # 0.15 guarantees only one waypoint is ever skipped at a time.
+    waypoint_reached_radius_m: 0.15
     goal_reached_radius_m: 0.3
 
     mavsdk_address: 'udpin://0.0.0.0:14540'

@@ -2,12 +2,20 @@
 """
 MAVSDK trajectory follower for obstacle-avoidance path planning.
 
-Takes off, then continuously walks the latest oa_planning Path: finds the
-nearest waypoint to the current (ground-truth) position, advances through
-waypoints as each is reached, and drives body-frame velocity setpoints toward
-the current one via the same MavsdkBridge pl_control uses for the precision
-landing controller — no ArUco/landing-specific logic in that bridge, so it's
-reused as-is rather than duplicated.
+Takes off, then continuously walks the latest oa_planning Path in order,
+advancing through waypoints as each is reached, and drives body-frame
+velocity setpoints toward the current one via the same MavsdkBridge
+pl_control uses for the precision landing controller — no ArUco/landing-
+specific logic in that bridge, so it's reused as-is rather than duplicated.
+
+Every new Path always starts at (a cell very close to) the current position,
+because oa_planning_node always plans from wherever the vehicle currently is
+— so a new path is always resumed from waypoint 0, never by searching for
+whichever waypoint happens to be spatially nearest. That search used to be
+here and was a real bug: the "nearest" waypoint by raw distance can be one
+further along the path, on the far side of an obstacle the path was
+deliberately routed around, which then had this controller cut straight
+through it to reach that "closer" point.
 """
 
 import math
@@ -55,12 +63,18 @@ class PathFollowerNode(Node):
         mavsdk_addr: str = self.get_parameter('mavsdk_address').value
         timer_hz: float = self.get_parameter('timer_hz').value
 
+        self.declare_parameter('hold_position_kp', 0.5)
+        self.declare_parameter('hold_position_max_speed_ms', 0.3)
+        self.hold_kp: float = self.get_parameter('hold_position_kp').value
+        self.hold_max_speed: float = self.get_parameter('hold_position_max_speed_ms').value
+
         # ── state ─────────────────────────────────────────────────────────────
         self.state = State.INIT
         self.path: Path | None = None
         self.waypoint_idx = 0
         self.current_pos = None   # (x, y, z)
         self.current_yaw = 0.0
+        self.hold_pos = None      # anchor point while holding (see _hold_position)
 
         # ── bridge & subscriptions ────────────────────────────────────────────
         self.bridge = MavsdkBridge(system_address=mavsdk_addr)
@@ -81,9 +95,10 @@ class PathFollowerNode(Node):
 
     def _path_cb(self, msg: Path):
         self.path = msg
-        # Resume from whichever waypoint is nearest now, rather than snapping
-        # back to the start of the path on every replan.
-        self.waypoint_idx = self._nearest_waypoint_index(msg)
+        # Every new path starts at (a cell very close to) the current
+        # position — see the module docstring for why this is index 0, not
+        # a "nearest waypoint" search.
+        self.waypoint_idx = 0
 
     def _odom_cb(self, msg: Odometry):
         p = msg.pose.pose.position
@@ -115,18 +130,18 @@ class PathFollowerNode(Node):
         if self.state != State.FOLLOW:
             return
         if self.path is None or not self.path.poses or self.current_pos is None:
-            self.bridge.send_velocity_body(0.0, 0.0, 0.0, 0.0)
+            self._hold_position()
             return
 
         target = self._advance_to_current_waypoint()
         if target is None:
-            # Reached the last waypoint: hold position.
-            self.bridge.send_velocity_body(0.0, 0.0, 0.0, 0.0)
             if self.state != State.GOAL_REACHED:
                 self.state = State.GOAL_REACHED
                 self.get_logger().info('Goal reached — holding position.')
+            self._hold_position()
             return
 
+        self.hold_pos = None  # actively navigating again; drop any stale anchor
         cx, cy, cz = self.current_pos
         dx, dy, dz = target[0] - cx, target[1] - cy, target[2] - cz
         dist = math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -138,12 +153,36 @@ class PathFollowerNode(Node):
         speed = min(self.cruise_speed, dist)
         wx, wy, wz = (dx / dist) * speed, (dy / dist) * speed, (dz / dist) * speed
 
+        self._send_world_velocity(wx, wy, wz)
+
+    def _hold_position(self):
+        """Actively station-keep at a fixed anchor point, rather than just
+        sending zero velocity: PX4 doesn't hold altitude perfectly under a
+        constant zero-velocity setpoint, and over an extended hold (e.g.
+        while the planner repeatedly fails to find a path) that drift is
+        enough to settle onto the floor — which then reads as "occupied",
+        permanently blocking any further path from being found at all."""
+        if self.current_pos is None:
+            return
+        if self.hold_pos is None:
+            self.hold_pos = self.current_pos
+
+        cx, cy, cz = self.current_pos
+        hx, hy, hz = self.hold_pos
+        ex, ey, ez = hx - cx, hy - cy, hz - cz
+
+        wx = max(-self.hold_max_speed, min(self.hold_max_speed, self.hold_kp * ex))
+        wy = max(-self.hold_max_speed, min(self.hold_max_speed, self.hold_kp * ey))
+        wz = max(-self.hold_max_speed, min(self.hold_max_speed, self.hold_kp * ez))
+
+        self._send_world_velocity(wx, wy, wz)
+
+    def _send_world_velocity(self, wx: float, wy: float, wz: float):
         # World ENU -> body FRD (MAVSDK VelocityBodyYawspeed convention).
         yaw = self.current_yaw
         forward = wx * math.cos(yaw) + wy * math.sin(yaw)
         right = wx * math.sin(yaw) - wy * math.cos(yaw)
         down = -wz
-
         self.bridge.send_velocity_body(forward, right, down, 0.0)
 
     # ── helpers ───────────────────────────────────────────────────────────────
@@ -166,18 +205,6 @@ class PathFollowerNode(Node):
             self.waypoint_idx += 1
 
         return None
-
-    def _nearest_waypoint_index(self, path: Path) -> int:
-        if self.current_pos is None or not path.poses:
-            return 0
-        cx, cy, cz = self.current_pos
-        best_idx, best_dist = 0, math.inf
-        for i, pose in enumerate(path.poses):
-            p = pose.pose.position
-            dist = (p.x - cx) ** 2 + (p.y - cy) ** 2 + (p.z - cz) ** 2
-            if dist < best_dist:
-                best_dist, best_idx = dist, i
-        return best_idx
 
 
 def main(args=None):

@@ -157,10 +157,18 @@
 
     <!--
       Bounded room: 20m (x: -10..10) x 14m (y: -7..7), wall height 3.5m.
-      Three staggered rows of pillars (x=-5, x=0, x=5) force an S-curve:
-      row A and row C leave a gap on the +y side, row B leaves a gap on
-      the -y side, so a straight-line flight from (-9,0) to (9,0) collides
-      with all three rows and a real planner has to weave.
+
+      Slalom layout: three rows of pillars (x=-5, 0, 5), each row itself
+      passable — 3m pillar-to-pillar pitch, 0.4m pillars, so a genuine 2.6m
+      gap between every adjacent pair, comfortably wide even after the
+      planner's obstacle-inflation margin. Row A and row C use the same y
+      positions (-6,-3,0,3,6); row B is offset by half the pitch
+      (-4.5,-1.5,1.5,4.5). That offset is the actual point of this layout:
+      row A's gaps (centered at -4.5,-1.5,1.5,4.5) line up exactly with row
+      B's *pillars*, and row B's gaps (at -6,-3,0,3,6) line up exactly with
+      row C's pillars — so flying straight through any gap puts a pillar
+      directly ahead and forces another lateral juke, all the way through
+      (there's no single wide "designed" opening left to shortcut through).
     -->
     <model name="warehouse_walls">
       <static>true</static>
@@ -218,31 +226,24 @@
       </link>
     </model>
 
-    <!-- Row A: x=-5, gap on +y side (y > 3) -->
-    <include><uri>model://warehouse_pillar</uri><name>pillar_a0</name><pose>-5 -6.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_a1</name><pose>-5 -4.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_a2</name><pose>-5 -3.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_a3</name><pose>-5 -1.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_a4</name><pose>-5  0.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_a5</name><pose>-5  1.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_a6</name><pose>-5  3.0 1.5 0 0 0</pose></include>
+    <!-- Row A: x=-5, pillars at y=-6,-3,0,3,6 -->
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a0</name><pose>-5 -6.0 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a1</name><pose>-5 -3.0 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a2</name><pose>-5  0.0 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a3</name><pose>-5  3.0 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_a4</name><pose>-5  6.0 2.0 0 0 0</pose></include>
 
-    <!-- Row B: x=0, gap on -y side (y < -3) -->
-    <include><uri>model://warehouse_pillar</uri><name>pillar_b0</name><pose>0 -3.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_b1</name><pose>0 -1.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_b2</name><pose>0  0.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_b3</name><pose>0  1.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_b4</name><pose>0  3.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_b5</name><pose>0  4.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_b6</name><pose>0  6.0 1.5 0 0 0</pose></include>
+    <!-- Row B: x=0, pillars at y=-4.5,-1.5,1.5,4.5 (offset from row A/C by half the pitch) -->
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b0</name><pose>0 -4.5 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b1</name><pose>0 -1.5 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b2</name><pose>0  1.5 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_b3</name><pose>0  4.5 2.0 0 0 0</pose></include>
 
-    <!-- Row C: x=5, gap on +y side (y > 3) -->
-    <include><uri>model://warehouse_pillar</uri><name>pillar_c0</name><pose>5 -6.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_c1</name><pose>5 -4.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_c2</name><pose>5 -3.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_c3</name><pose>5 -1.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_c4</name><pose>5  0.0 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_c5</name><pose>5  1.5 1.5 0 0 0</pose></include>
-    <include><uri>model://warehouse_pillar</uri><name>pillar_c6</name><pose>5  3.0 1.5 0 0 0</pose></include>
+    <!-- Row C: x=5, pillars at y=-6,-3,0,3,6 (same as row A) -->
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c0</name><pose>5 -6.0 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c1</name><pose>5 -3.0 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c2</name><pose>5  0.0 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c3</name><pose>5  3.0 2.0 0 0 0</pose></include>
+    <include><uri>model://warehouse_pillar</uri><name>pillar_c4</name><pose>5  6.0 2.0 0 0 0</pose></include>
   </world>
 </sdf>
