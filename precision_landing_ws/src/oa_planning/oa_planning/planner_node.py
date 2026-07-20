@@ -4,6 +4,7 @@ from nav_msgs.msg import Odometry, Path
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
+from std_msgs.msg import Bool
 
 from oa_planning import astar
 from oa_planning.occupancy_grid import OccupancyGrid3D
@@ -32,6 +33,7 @@ class PlannerNode(Node):
         self.declare_parameter('odom_topic', '/oa/odom')
         self.declare_parameter('goal_topic', '/oa/goal_pose')
         self.declare_parameter('path_topic', '/oa/path')
+        self.declare_parameter('vio_diverged_topic', '/oa/vio/diverged')
 
         resolution = self.get_parameter('resolution').value
         origin = tuple(self.get_parameter('origin').value)
@@ -42,6 +44,13 @@ class PlannerNode(Node):
         self._goal = tuple(self.get_parameter('goal').value)
         self._current_pos = None
         self._frame_id = None
+        # Set by oa_vio/vio_divergence_watchdog (sim-only — needs ground
+        # truth). Without this, planning kept running on an increasingly
+        # deranged VIO position long after path_follower_node had already
+        # given up and landed — harmless (the follower ignores it once
+        # stopped) but wasted CPU replanning against nonsense and spammed
+        # "No path found" warnings continuously instead of once.
+        self._localization_lost = False
 
         self.create_subscription(
             PointCloud2, self.get_parameter('cloud_topic').value, self._on_cloud, 1)
@@ -49,6 +58,8 @@ class PlannerNode(Node):
             Odometry, self.get_parameter('odom_topic').value, self._on_odom, 10)
         self.create_subscription(
             PoseStamped, self.get_parameter('goal_topic').value, self._on_goal, 10)
+        self.create_subscription(
+            Bool, self.get_parameter('vio_diverged_topic').value, self._on_diverged, 10)
 
         self._path_pub = self.create_publisher(
             Path, self.get_parameter('path_topic').value, 1)
@@ -70,7 +81,21 @@ class PlannerNode(Node):
         self._goal = (p.x, p.y, p.z)
         self.get_logger().info(f'New goal: {self._goal}')
 
+    def _on_diverged(self, msg: Bool):
+        if msg.data and not self._localization_lost:
+            self.get_logger().error(
+                'VIO localization lost (see vio_divergence_watchdog) — stopping replanning '
+                'until it recovers, rather than planning against a position nothing can '
+                'validate.')
+            empty_path = Path()
+            empty_path.header.frame_id = self._frame_id or 'map'
+            empty_path.header.stamp = self.get_clock().now().to_msg()
+            self._path_pub.publish(empty_path)
+        self._localization_lost = msg.data
+
     def _plan_once(self):
+        if self._localization_lost:
+            return
         if self._current_pos is None:
             return
 

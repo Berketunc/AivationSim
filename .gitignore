@@ -30,5 +30,12 @@ Thumbs.db
 # PX4 (if ever added to this repo)
 PX4-Autopilot/
 
+# OpenVINS (if ever added to this repo) — lives at ~/open_vins, a sibling
+# checkout, same pattern as PX4-Autopilot above
+open_vins/
+
 # Gazebo
 ~/.gz/
+
+# Working debug notes, not meant for version history
+MILESTONE2_STATUS.md

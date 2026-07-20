@@ -1,0 +1,47 @@
+%YAML:1.0
+
+# IMU chain calibration for OpenVINS, matching AviationSim's simulated x500
+# vehicle IMU (see sim_assets/models/x500_base's imu_sensor in the PX4 clone,
+# not this repo — noise values below are converted from its per-sample
+# gaussian stddevs to the continuous-time noise density OpenVINS expects:
+# density = stddev * sqrt(dt), dt = 1/update_rate).
+imu0:
+  T_i_b:
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+  # x/y/z gyro noise is identical in the sim (0.0008726646 rad/s stddev,
+  # modeled after an IIM42653), so a single density value covers all axes.
+  accelerometer_noise_density: 4.1e-4    # [ m / s^2 / sqrt(Hz) ] (x/y: 4.03e-4, z: 4.34e-4 — averaged)
+  gyroscope_noise_density: 5.52e-5       # [ rad / s / sqrt(Hz) ]
+  # The sim's IMU plugin only adds per-sample white noise — it doesn't model
+  # bias drift at all, so there's no "correct" random walk value to convert.
+  # These are conservative generic MEMS placeholders (same order of
+  # magnitude as EuRoC's) rather than anything measured from the sim.
+  accelerometer_random_walk: 3.0000e-3   # [ m / s^3 / sqrt(Hz) ]
+  gyroscope_random_walk: 1.9393e-05      # [ rad / s^2 / sqrt(Hz) ]
+  rostopic: /oa/vio/imu
+  time_offset: 0.0
+  update_rate: 250.0
+  model: "kalibr"
+  Tw:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  R_IMUtoGYRO:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  Ta:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  R_IMUtoACC:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  Tg:
+    - [ 0.0, 0.0, 0.0 ]
+    - [ 0.0, 0.0, 0.0 ]
+    - [ 0.0, 0.0, 0.0 ]

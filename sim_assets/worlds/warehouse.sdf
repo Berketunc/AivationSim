@@ -170,6 +170,14 @@
       directly ahead and forces another lateral juke, all the way through
       (there's no single wide "designed" opening left to shortcut through).
     -->
+    <!--
+      Wall visuals are split into alternating light/dark bands along their
+      long axis rather than one flat-colored box, same reasoning as
+      warehouse_pillar/model.sdf: MILESTONE2_STATUS.md's Component 6 traced
+      OpenVINS's post-init divergence in part to this scene having no
+      interior texture for KLT to track, and a single flat box is the worst
+      case for that. Collision geometry is untouched.
+    -->
     <model name="warehouse_walls">
       <static>true</static>
       <link name="north">
@@ -177,12 +185,35 @@
         <collision name="collision">
           <geometry><box><size>20.4 0.2 3.5</size></box></geometry>
         </collision>
-        <visual name="visual">
-          <geometry><box><size>20.4 0.2 3.5</size></box></geometry>
-          <material>
-            <ambient>0.75 0.75 0.75 1</ambient>
-            <diffuse>0.75 0.75 0.75 1</diffuse>
-          </material>
+        <visual name="band0">
+          <pose>-8.5 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+        </visual>
+        <visual name="band1">
+          <pose>-5.1 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+        <visual name="band2">
+          <pose>-1.7 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+        </visual>
+        <visual name="band3">
+          <pose>1.7 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+        <visual name="band4">
+          <pose>5.1 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+        </visual>
+        <visual name="band5">
+          <pose>8.5 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
         </visual>
       </link>
       <link name="south">
@@ -190,12 +221,35 @@
         <collision name="collision">
           <geometry><box><size>20.4 0.2 3.5</size></box></geometry>
         </collision>
-        <visual name="visual">
-          <geometry><box><size>20.4 0.2 3.5</size></box></geometry>
-          <material>
-            <ambient>0.75 0.75 0.75 1</ambient>
-            <diffuse>0.75 0.75 0.75 1</diffuse>
-          </material>
+        <visual name="band0">
+          <pose>-8.5 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+        <visual name="band1">
+          <pose>-5.1 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+        </visual>
+        <visual name="band2">
+          <pose>-1.7 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+        <visual name="band3">
+          <pose>1.7 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+        </visual>
+        <visual name="band4">
+          <pose>5.1 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+        <visual name="band5">
+          <pose>8.5 0 0 0 0 0</pose>
+          <geometry><box><size>3.4 0.2 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
         </visual>
       </link>
       <link name="east">
@@ -203,12 +257,25 @@
         <collision name="collision">
           <geometry><box><size>0.2 14 3.5</size></box></geometry>
         </collision>
-        <visual name="visual">
-          <geometry><box><size>0.2 14 3.5</size></box></geometry>
-          <material>
-            <ambient>0.75 0.75 0.75 1</ambient>
-            <diffuse>0.75 0.75 0.75 1</diffuse>
-          </material>
+        <visual name="band0">
+          <pose>0 -5.25 0 0 0 0</pose>
+          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+        </visual>
+        <visual name="band1">
+          <pose>0 -1.75 0 0 0 0</pose>
+          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+        <visual name="band2">
+          <pose>0 1.75 0 0 0 0</pose>
+          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+        </visual>
+        <visual name="band3">
+          <pose>0 5.25 0 0 0 0</pose>
+          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
         </visual>
       </link>
       <link name="west">
@@ -216,12 +283,25 @@
         <collision name="collision">
           <geometry><box><size>0.2 14 3.5</size></box></geometry>
         </collision>
-        <visual name="visual">
-          <geometry><box><size>0.2 14 3.5</size></box></geometry>
-          <material>
-            <ambient>0.75 0.75 0.75 1</ambient>
-            <diffuse>0.75 0.75 0.75 1</diffuse>
-          </material>
+        <visual name="band0">
+          <pose>0 -5.25 0 0 0 0</pose>
+          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+        <visual name="band1">
+          <pose>0 -1.75 0 0 0 0</pose>
+          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+        </visual>
+        <visual name="band2">
+          <pose>0 1.75 0 0 0 0</pose>
+          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+        <visual name="band3">
+          <pose>0 5.25 0 0 0 0</pose>
+          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
+          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
         </visual>
       </link>
     </model>

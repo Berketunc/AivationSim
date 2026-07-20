@@ -1,0 +1,138 @@
+%YAML:1.0 # need to specify the file type at the top!
+
+verbosity: "WARNING" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
+# Was INFO — ov_core::Printer fires PRINT_INFO/PRINT_DEBUG from ~489 call
+# sites, many per-frame/per-IMU-sample, which is a real CPU cost on top of
+# actual VIO compute and appears to starve ros2 launch's output capture for
+# every other node in the stack. See sim_obstacle_avoidance.launch.py's
+# matching ROS-param override (whichever this node's YamlParser resolves
+# first between the two, both now agree).
+
+use_fej: true
+integration: "rk4"
+use_stereo: false  # single forward-facing mono_cam, not a stereo pair
+max_cameras: 1
+
+calib_cam_extrinsics: true
+calib_cam_intrinsics: true
+calib_cam_timeoffset: true
+calib_imu_intrinsics: false
+calib_imu_g_sensitivity: false
+
+max_clones: 11
+max_slam: 50
+max_slam_in_update: 25
+max_msckf_in_update: 40
+dt_slam_delay: 1
+
+gravity_mag: 9.81 # matches sim_assets/worlds/warehouse.sdf's <gravity>0 0 -9.8</gravity>... see note below
+# NOTE: warehouse.sdf actually sets 9.8, not 9.81 — close enough that it's
+# not worth a separate config value; OpenVINS's own initializer estimates
+# gravity direction from the IMU anyway, this is just the magnitude prior.
+
+feat_rep_msckf: "GLOBAL_3D"
+feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
+feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
+
+try_zupt: false
+zupt_chi2_multipler: 0
+zupt_max_velocity: 0.1
+zupt_noise_multiplier: 10
+zupt_max_disparity: 0.5
+zupt_only_at_beginning: false
+
+# ==================================================================
+
+init_window_time: 2.0
+init_imu_thresh: 1.5
+# Default (10.0px) assumes handheld-camera-scale motion. Our vehicle's real
+# climb produces only ~0.7-1.5px of disparity (confirmed via [init]:
+# disparity log lines), which stayed under 10.0 the entire time — so the
+# system judged itself "still" indefinitely, blocking dynamic init (which
+# explicitly requires NOT still) as well as static init (which additionally
+# needs a jerk that a smooth climb never produces either). 0.5 sits clearly
+# above true-stationary noise (~0.0, confirmed at boot) and clearly below
+# real climb motion.
+init_max_disparity: 0.5
+# Dynamic init requires >= 0.75 * this many valid tracked features (see
+# DynamicInitializer.cpp) — with the default 50 that's 37.5, and our plain,
+# low-texture pillars/walls were tracking 34-37, just barely short. 40 drops
+# that gate to 30, comfortably below what's actually being tracked, without
+# weakening the *rotational diversity* checks (a separate, unrelated gate).
+init_max_features: 40
+
+# Static init (the default) waits for stillness then a detectable "accel
+# jerk" to establish scale — that pattern fits a handheld camera, not a
+# multirotor that just climbs smoothly on takeoff and never produces a
+# sharp jerk. Confirmed empirically: disparity grew fine (camera tracking
+# worked) but "no accel jerk detected" repeated the whole climb. Dynamic
+# init instead uses a window of genuinely different poses during normal
+# flight, which matches how this vehicle actually moves.
+init_dyn_use: true
+init_dyn_mle_opt_calib: false
+init_dyn_mle_max_iter: 50
+init_dyn_mle_max_time: 0.05
+init_dyn_mle_max_threads: 6
+init_dyn_num_pose: 6
+init_dyn_min_deg: 10.0
+
+init_dyn_inflation_ori: 10
+init_dyn_inflation_vel: 100
+init_dyn_inflation_bg: 10
+init_dyn_inflation_ba: 100
+init_dyn_min_rec_cond: 1e-12
+
+init_dyn_bias_g: [ 0.0, 0.0, 0.0 ]
+init_dyn_bias_a: [ 0.0, 0.0, 0.0 ]
+
+# ==================================================================
+
+record_timing_information: false
+record_timing_filepath: "/tmp/traj_timing.txt"
+
+save_total_state: false
+filepath_est: "/tmp/ov_estimate.txt"
+filepath_std: "/tmp/ov_estimate_std.txt"
+filepath_gt: "/tmp/ov_groundtruth.txt"
+
+# ==================================================================
+
+use_klt: true
+# Bumped from 200/20/(5x5 grid) — the low-texture warehouse surfaces were
+# already only finding 34-37 features against init's 37.5-feature gate with
+# zero rotation (see init_max_features note above); the post-init divergence
+# hypothesis is that the VIO wiggle's yaw rate produces optical flow large
+# enough to drop a chunk of an already-marginal feature set. More
+# candidates (num_pts), a lower corner-detection bar (fast_threshold), and a
+# finer detection grid (grid_x/grid_y) all trade CPU for a bigger surviving
+# feature count through that fast-flow window, without changing what makes
+# a track valid once found.
+num_pts: 300
+fast_threshold: 12
+grid_x: 7
+grid_y: 6
+min_px_dist: 10
+knn_ratio: 0.70
+track_frequency: 21.0
+downsample_cameras: false
+num_opencv_threads: 4
+histogram_method: "HISTOGRAM"
+
+use_aruco: false
+num_aruco: 1024
+downsize_aruco: true
+
+# ==================================================================
+
+up_msckf_sigma_px: 1
+up_msckf_chi2_multipler: 1
+up_slam_sigma_px: 1
+up_slam_chi2_multipler: 1
+up_aruco_sigma_px: 1
+up_aruco_chi2_multipler: 1
+
+use_mask: false
+
+# imu and camera spacial-temporal
+relative_config_imu: "kalibr_imu_chain.yaml"
+relative_config_imucam: "kalibr_imucam_chain.yaml"

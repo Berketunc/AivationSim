@@ -1,0 +1,32 @@
+%YAML:1.0
+
+# Camera calibration for OpenVINS, matching the mono_cam mounted on
+# x500_3d_lidar (sim_assets/models/x500_3d_lidar/model.sdf): mounted at
+# 0.15 0 0.05 relative to base_link with zero rotation (forward-facing,
+# unlike Milestone 1's downward-pitched landing camera).
+#
+# T_imu_cam is R_CtoI (rotation, camera optical frame -> IMU/base_link
+# frame) and p_CinI (camera position in the IMU frame) as a 4x4 matrix.
+# The rotation isn't the identity even though the camera has zero SDF
+# rotation, because "camera optical frame" (Z-forward, X-right, Y-down —
+# the standard CV/ROS convention OpenVINS expects) isn't the same as the
+# body/mounting frame (X-forward, Y-left, Z-up, matching this project's
+# ENU-world/FLU-body convention used everywhere else). Derivation: optical
+# Z (forward) = body +X, optical X (right) = body -Y, optical Y (down) =
+# body -Z.
+cam0:
+  T_imu_cam:
+    - [0.0,  0.0, 1.0, 0.15]
+    - [-1.0, 0.0, 0.0, 0.0]
+    - [0.0, -1.0, 0.0, 0.05]
+    - [0.0,  0.0, 0.0, 1.0]
+  cam_overlaps: []
+  camera_model: pinhole
+  # No lens distortion configured on mono_cam (it's an ideal simulated pinhole).
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: radtan
+  # fx=fy=539.936 derived from mono_cam's horizontal_fov=1.74 rad at
+  # 1280x960: fx = (width/2) / tan(hfov/2). cx,cy = image center.
+  intrinsics: [539.936, 539.936, 640.0, 480.0]
+  resolution: [1280, 960]
+  rostopic: /oa/vio/image_raw

@@ -16,6 +16,10 @@
   <exec_depend>octomap_server</exec_depend>
   <exec_depend>oa_planning</exec_depend>
   <exec_depend>oa_control</exec_depend>
+  <exec_depend>oa_vio</exec_depend>
+  <exec_depend>ros_gz_image</exec_depend>
+  <!-- ov_msckf/ov_core/ov_init are built separately at ~/open_vins (not a
+       rosdep-known package name), sourced as an underlay — see README. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

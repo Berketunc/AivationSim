@@ -8,13 +8,85 @@
           <box><size>0.4 0.4 4.0</size></box>
         </geometry>
       </collision>
-      <visual name='visual'>
-        <geometry>
-          <box><size>0.4 0.4 4.0</size></box>
-        </geometry>
+      <!--
+        Visual is 8 stacked 0.5m bands instead of one flat-colored box.
+        MILESTONE2_STATUS.md's Component 6 notes traced OpenVINS's post-init
+        VIO divergence in part to this scene's total lack of texture: a
+        single flat-colored box gives KLT zero interior gradient to lock a
+        corner onto, so every feature it does find comes from silhouette
+        edges alone. Alternating light/dark bands add real horizontal
+        intensity edges around all four faces at 0.5m intervals, independent
+        of viewing angle, without changing the collision geometry at all.
+      -->
+      <visual name='band0'>
+        <pose>0 0 -1.75 0 0 0</pose>
+        <geometry><box><size>0.4 0.4 0.5</size></box></geometry>
         <material>
           <ambient>0.55 0.5 0.45 1</ambient>
           <diffuse>0.55 0.5 0.45 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <visual name='band1'>
+        <pose>0 0 -1.25 0 0 0</pose>
+        <geometry><box><size>0.4 0.4 0.5</size></box></geometry>
+        <material>
+          <ambient>0.2 0.18 0.15 1</ambient>
+          <diffuse>0.2 0.18 0.15 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <visual name='band2'>
+        <pose>0 0 -0.75 0 0 0</pose>
+        <geometry><box><size>0.4 0.4 0.5</size></box></geometry>
+        <material>
+          <ambient>0.55 0.5 0.45 1</ambient>
+          <diffuse>0.55 0.5 0.45 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <visual name='band3'>
+        <pose>0 0 -0.25 0 0 0</pose>
+        <geometry><box><size>0.4 0.4 0.5</size></box></geometry>
+        <material>
+          <ambient>0.2 0.18 0.15 1</ambient>
+          <diffuse>0.2 0.18 0.15 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <visual name='band4'>
+        <pose>0 0 0.25 0 0 0</pose>
+        <geometry><box><size>0.4 0.4 0.5</size></box></geometry>
+        <material>
+          <ambient>0.55 0.5 0.45 1</ambient>
+          <diffuse>0.55 0.5 0.45 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <visual name='band5'>
+        <pose>0 0 0.75 0 0 0</pose>
+        <geometry><box><size>0.4 0.4 0.5</size></box></geometry>
+        <material>
+          <ambient>0.2 0.18 0.15 1</ambient>
+          <diffuse>0.2 0.18 0.15 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <visual name='band6'>
+        <pose>0 0 1.25 0 0 0</pose>
+        <geometry><box><size>0.4 0.4 0.5</size></box></geometry>
+        <material>
+          <ambient>0.55 0.5 0.45 1</ambient>
+          <diffuse>0.55 0.5 0.45 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <visual name='band7'>
+        <pose>0 0 1.75 0 0 0</pose>
+        <geometry><box><size>0.4 0.4 0.5</size></box></geometry>
+        <material>
+          <ambient>0.2 0.18 0.15 1</ambient>
+          <diffuse>0.2 0.18 0.15 1</diffuse>
           <specular>0.2 0.2 0.2 1</specular>
         </material>
       </visual>

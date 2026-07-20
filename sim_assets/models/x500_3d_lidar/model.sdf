@@ -15,6 +15,19 @@
       <child>lidar_link</child>
       <pose relative_to="base_link">0 0 .12 0 0 0</pose>
     </joint>
+    <!-- Forward-facing mono camera for VIO (Component 6). mono_cam's default
+         orientation already looks along +X, unlike the M1 downward mount
+         which pitches it -90deg; here we just translate it to the front. -->
+    <include merge='true'>
+      <uri>model://mono_cam</uri>
+      <pose>0.15 0 0.05 0 0 0</pose>
+      <name>mono_cam</name>
+    </include>
+    <joint name="CameraJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>camera_link</child>
+      <pose relative_to="base_link">0.15 0 0.05 0 0 0</pose>
+    </joint>
     <!-- Ground-truth pose for oa_bringup; not present on the base x500,
          only on variants (e.g. x500_vision) that explicitly add it. -->
     <plugin
