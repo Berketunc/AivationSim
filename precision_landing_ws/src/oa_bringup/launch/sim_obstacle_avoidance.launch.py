@@ -52,6 +52,8 @@ def generate_launch_description():
         get_package_share_directory('oa_bringup'), 'config', 'octomap_params.yaml')
     planner_params = os.path.join(
         get_package_share_directory('oa_planning'), 'config', 'planner_params.yaml')
+    control_params = os.path.join(
+        get_package_share_directory('oa_control'), 'config', 'control_params.yaml')
 
     return LaunchDescription([
         # Bridge Gazebo point cloud + ground-truth odometry into ROS 2.
@@ -111,5 +113,14 @@ def generate_launch_description():
             name='oa_planning_node',
             output='screen',
             parameters=[planner_params, {'odom_topic': OA_ODOMETRY_TOPIC}],
+        ),
+
+        # Takes off and drives the planned path via MAVSDK offboard.
+        Node(
+            package='oa_control',
+            executable='path_follower_node',
+            name='path_follower_node',
+            output='screen',
+            parameters=[control_params, {'odom_topic': OA_ODOMETRY_TOPIC}],
         ),
     ])

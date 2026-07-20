@@ -29,6 +29,18 @@
           <specular>0.3 0.3 0.3 1</specular>
         </material>
       </visual>
+      <!--
+        Ray count is capped well below a "real" 16-channel/360 spec (which
+        would be ~440x16). In this environment, EGL/dri2 fail to get a GPU
+        context (see the libEGL warnings at sim startup) so gpu_lidar falls
+        back to slow software rendering; at 440x16 that's slow enough to
+        desync PX4's lockstep stepping and the vehicle never actually leaves
+        the ground even though MAVSDK/EKF2 reports it climbing normally.
+        Verified empirically: 720/2160/4800 rays all fly correctly; 7040
+        (440x16) does not. Don't raise this without re-testing an actual
+        takeoff against ground-truth Gazebo pose, not just MAVSDK telemetry —
+        the two can disagree exactly in the way that caused this.
+      -->
       <sensor name="lidar_3d" type="gpu_lidar">
         <pose>0 0 0 0 0 0</pose>
         <update_rate>10</update_rate>
@@ -38,7 +50,7 @@
         <ray>
           <scan>
             <horizontal>
-              <samples>440</samples>
+              <samples>300</samples>
               <resolution>1</resolution>
               <min_angle>-3.141593</min_angle>
               <max_angle>3.141593</max_angle>
