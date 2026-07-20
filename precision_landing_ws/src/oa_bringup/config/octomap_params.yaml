@@ -1,0 +1,23 @@
+octomap_server:
+  ros__parameters:
+    # Voxel size. 0.05 (the package default) is overkill for a warehouse-scale
+    # room; 0.2 still resolves the 0.4 m pillars comfortably and is far cheaper
+    # to update in real time.
+    resolution: 0.2
+
+    # Both must match the TF frames oa_bringup actually publishes (see
+    # sim_obstacle_avoidance.launch.py's ODOM_FRAME / BASE_FRAME) — the
+    # package defaults ('map' / 'base_footprint') don't have the per-instance
+    # model-name prefix Gazebo adds.
+    frame_id: 'x500_3d_lidar_0/odom'
+    base_frame_id: 'x500_3d_lidar_0/base_footprint'
+
+    # Room is 20m long; cap well beyond that rather than trusting the sensor's
+    # full 30m spec range, which would let far spurious returns in.
+    sensor_model:
+      max_range: 20.0
+
+    # Ground plane is left unfiltered (marked occupied like any other surface):
+    # the drone flies above it, so it's just another "don't fly into this"
+    # surface for oa_planning rather than something to special-case.
+    filter_ground_plane: false

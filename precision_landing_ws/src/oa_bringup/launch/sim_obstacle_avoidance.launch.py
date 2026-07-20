@@ -22,6 +22,9 @@ once (this launch file's bridge counts as a subscriber, so after it's running
 they'll show up normally).
 """
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
@@ -33,8 +36,23 @@ GZ_ODOMETRY_TOPIC = '/model/x500_3d_lidar_0/odometry_with_covariance'
 OA_POINTCLOUD_TOPIC = '/oa/points'
 OA_ODOMETRY_TOPIC = '/oa/odom'
 
+# ── TF frame names (same _0 instance-suffix caveat as GZ_ODOMETRY_TOPIC) ───────
+# odom_to_tf_node publishes ODOM_FRAME -> BASE_FRAME from /oa/odom. LIDAR_FRAME
+# is the point cloud's header.frame_id (see sim_assets/models/lidar_3d), fixed
+# rigidly to BASE_FRAME per the LidarJoint pose in x500_3d_lidar/model.sdf —
+# there's no plugin publishing that link, so it's a static transform here.
+ODOM_FRAME = 'x500_3d_lidar_0/odom'
+BASE_FRAME = 'x500_3d_lidar_0/base_footprint'
+LIDAR_FRAME = 'x500_3d_lidar_0/lidar_link/lidar_3d'
+LIDAR_MOUNT_XYZ = ('0', '0', '0.12')
+
 
 def generate_launch_description():
+    octomap_params = os.path.join(
+        get_package_share_directory('oa_bringup'), 'config', 'octomap_params.yaml')
+    planner_params = os.path.join(
+        get_package_share_directory('oa_planning'), 'config', 'planner_params.yaml')
+
     return LaunchDescription([
         # Bridge Gazebo point cloud + ground-truth odometry into ROS 2.
         Node(
@@ -60,5 +78,38 @@ def generate_launch_description():
             name='odom_to_tf_node',
             output='screen',
             parameters=[{'odom_topic': OA_ODOMETRY_TOPIC}],
+        ),
+
+        # Fixed sensor-mount transform (no plugin publishes this one).
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='lidar_static_tf',
+            arguments=[
+                '--x', LIDAR_MOUNT_XYZ[0], '--y', LIDAR_MOUNT_XYZ[1], '--z', LIDAR_MOUNT_XYZ[2],
+                '--frame-id', BASE_FRAME,
+                '--child-frame-id', LIDAR_FRAME,
+            ],
+        ),
+
+        # 3D occupancy map from the point cloud + TF.
+        Node(
+            package='octomap_server',
+            executable='octomap_server_node',
+            name='octomap_server',
+            output='screen',
+            parameters=[octomap_params],
+            remappings=[
+                ('cloud_in', OA_POINTCLOUD_TOPIC),
+            ],
+        ),
+
+        # A* path planning over octomap_server's occupied-cell centers.
+        Node(
+            package='oa_planning',
+            executable='planner_node',
+            name='oa_planning_node',
+            output='screen',
+            parameters=[planner_params, {'odom_topic': OA_ODOMETRY_TOPIC}],
         ),
     ])

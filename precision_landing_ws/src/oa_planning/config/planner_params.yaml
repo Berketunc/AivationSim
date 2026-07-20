@@ -1,0 +1,18 @@
+oa_planning_node:
+  ros__parameters:
+    # Must match octomap_params.yaml's resolution — a mismatch would just mean
+    # planning at a coarser/finer grid than the map was actually built at.
+    resolution: 0.2
+
+    # Bounding box of sim_assets/worlds/warehouse.sdf's room (x: -10..10,
+    # y: -7..7, wall height 3.5). Grid origin is the box's min corner.
+    origin: [-10.0, -7.0, 0.0]
+    size: [20.0, 14.0, 3.5]
+
+    # Default goal: past all three pillar rows, roughly opposite the drone's
+    # -9,0,0.2 spawn pose from sim_obstacle_avoidance.launch.py's companion
+    # PX4_GZ_MODEL_POSE. Override at runtime via the goal_topic instead of
+    # editing this for one-off goals.
+    goal: [9.0, 0.0, 1.5]
+
+    replan_period_s: 2.0
