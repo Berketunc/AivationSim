@@ -1,0 +1,22 @@
+[package]
+
+version = "0.1.0"
+
+category = "isaaclab"
+readme  = "README.md"
+
+title = "AviationSim Obstacle-Avoidance RL"
+author = "Berke"
+maintainer = "Berke"
+description = "Isaac Lab tasks for AviationSim's classical-vs-RL obstacle-avoidance research"
+repository = "https://github.com/Berketunc/AviationSim"
+keywords = ["isaaclab", "obstacle-avoidance", "drone"]
+
+[dependencies]
+"isaaclab" = {}
+"isaaclab_assets" = {}
+"isaaclab_rl" = {}
+"isaaclab_tasks" = {}
+
+[[python.module]]
+name = "oa_rl"
