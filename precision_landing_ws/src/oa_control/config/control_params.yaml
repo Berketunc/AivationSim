@@ -25,3 +25,28 @@ path_follower_node:
 
     mavsdk_address: 'udpin://0.0.0.0:14540'
     timer_hz: 20.0
+
+    # ── post-obstacle-course landing phase (see MILESTONE2_STATUS.md) ──────
+    # Once the A* goal is reached, hand off from waypoint-following to
+    # ArUco-marker landing — reusing pl_control/landing_controller_node's
+    # align/descend approach (same gains work here: same PX4 x500 airframe,
+    # same MavsdkBridge, same marker size), just embedded in this node's
+    # state machine instead of a second MAVSDK-connected node, since two
+    # nodes can't safely share one offboard control loop.
+    marker_pi_kp: 0.5
+    marker_pi_ki: 0.05
+    marker_pi_integral_max: 0.5
+    marker_horizontal_vel_max: 1.0
+    marker_descend_vel_ms: 0.3
+    marker_hacc_radius_m: 0.20
+    marker_n_frames_aligned: 10
+    marker_final_land_alt_m: 0.5
+    # The goal (8.5, 0) is set to exactly the marker's (x, y), so the marker
+    # should already be ~underfoot on arrival — this search only covers the
+    # residual error from goal_reached_radius_m/waypoint tracking, not a
+    # real hunt. Small and slow relative to pl_control's Milestone-1 search
+    # (which has to cover open ground with no prior position estimate).
+    marker_search_speed_ms: 0.2
+    marker_search_step_m: 0.5
+    marker_search_timeout_s: 20.0
+    marker_lost_timeout_s: 2.0

@@ -15,18 +15,20 @@
       <child>lidar_link</child>
       <pose relative_to="base_link">0 0 .12 0 0 0</pose>
     </joint>
-    <!-- Forward-facing mono camera for VIO (Component 6). mono_cam's default
-         orientation already looks along +X, unlike the M1 downward mount
-         which pitches it -90deg; here we just translate it to the front. -->
+    <!-- Downward mono camera for ArUco landing, once past the pillar rows.
+         Same mount M1's x500_mono_cam_down uses (pitch pi/2). Originally
+         mounted forward-facing for Component 6 VIO; VIO was fully removed
+         from the pipeline (see MILESTONE2_STATUS.md's research pivot), so
+         this is repointed down rather than carrying an unused camera. -->
     <include merge='true'>
       <uri>model://mono_cam</uri>
-      <pose>0.15 0 0.05 0 0 0</pose>
+      <pose>0 0 0.05 0 1.5707 0</pose>
       <name>mono_cam</name>
     </include>
     <joint name="CameraJoint" type="fixed">
       <parent>base_link</parent>
       <child>camera_link</child>
-      <pose relative_to="base_link">0.15 0 0.05 0 0 0</pose>
+      <pose relative_to="base_link">0 0 0.05 0 1.5707 0</pose>
     </joint>
     <!-- Ground-truth pose for oa_bringup; not present on the base x500,
          only on variants (e.g. x500_vision) that explicitly add it. -->

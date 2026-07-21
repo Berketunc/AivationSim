@@ -12,14 +12,17 @@
     <!--
       Explicit default camera view: this room is 20x14m and the drone spawns
       9m off-center (-9,0), well outside gz-sim's generic default camera framing
-      (which is why the drone was hard to spot on first launch). Nearly
-      top-down from high above the room center — deliberately not a "nice"
-      angled shot, because an angled camera's centerline can easily miss the
-      much-lower, much-closer drone entirely (that was the bug in the first
-      attempt at this: -14 0 6 pitch 0.4 aimed its centerline at the far end
-      of the room, well above the drone's actual height). Looking almost
-      straight down from z=22 guarantees the whole floor, and anything on
-      it, is in frame regardless of exact drone position.
+      (which is why the drone was hard to spot on first launch). This is a
+      low, close chase view directly behind the drone's spawn pose
+      (-8.5,0,0.2), looking forward along +X — the direction the drone
+      actually flies, from spawn toward the goal at (8.5,0,1.5) — rather
+      than from the side or a 3/4 angle. It only guarantees good framing at
+      spawn, not for the rest of the ~17m flight (an earlier
+      top-down-from-z=22 version traded the good close-up for guaranteed
+      whole-room coverage instead; revisit that if losing the drone
+      mid-flight in this view becomes a problem). For a camera that actually
+      tracks the drone through the whole flight, right-click the drone model
+      in the GUI and choose "Follow" rather than relying on this static pose.
       Same plugin set gz-sim's own default GUI config uses, just repositioned.
     -->
     <gui fullscreen="false">
@@ -33,7 +36,7 @@
         <scene>scene</scene>
         <ambient_light>0.4 0.4 0.4</ambient_light>
         <background_color>0.7 0.7 0.7</background_color>
-        <camera_pose>0 0 22 0 1.4 0</camera_pose>
+        <camera_pose>-11.5 0 0.4 0 -0.15 0</camera_pose>
       </plugin>
       <plugin name="World control" filename="WorldControl">
         <gz-gui>
@@ -278,32 +281,14 @@
           <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
         </visual>
       </link>
-      <link name="west">
-        <pose>-10 0 1.75 0 0 0</pose>
-        <collision name="collision">
-          <geometry><box><size>0.2 14 3.5</size></box></geometry>
-        </collision>
-        <visual name="band0">
-          <pose>0 -5.25 0 0 0 0</pose>
-          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
-          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
-        </visual>
-        <visual name="band1">
-          <pose>0 -1.75 0 0 0 0</pose>
-          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
-          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
-        </visual>
-        <visual name="band2">
-          <pose>0 1.75 0 0 0 0</pose>
-          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
-          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
-        </visual>
-        <visual name="band3">
-          <pose>0 5.25 0 0 0 0</pose>
-          <geometry><box><size>0.2 3.5 3.5</size></box></geometry>
-          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
-        </visual>
-      </link>
+      <!-- West wall (x=-10) removed entirely — it sat only 1.5m behind the
+           drone's spawn (-8.5,0,0.2) and dominated the frame for any
+           behind-the-drone chase view positioned there to look down the
+           flight corridor (+X, toward the goal). Flight only ever heads
+           +X from spawn, so there's no obstacle-avoidance reason to keep a
+           physical boundary here; oa_planning's grid bounds (planner_params
+           origin/size) still cap where A* will plan regardless of whether a
+           physical wall exists. -->
     </model>
 
     <!-- Row A: x=-5, pillars at y=-6,-3,0,3,6 -->
@@ -325,5 +310,12 @@
     <include><uri>model://warehouse_pillar</uri><name>pillar_c2</name><pose>5  0.0 2.0 0 0 0</pose></include>
     <include><uri>model://warehouse_pillar</uri><name>pillar_c3</name><pose>5  3.0 2.0 0 0 0</pose></include>
     <include><uri>model://warehouse_pillar</uri><name>pillar_c4</name><pose>5  6.0 2.0 0 0 0</pose></include>
+
+    <!-- Landing marker for the post-obstacle-course landing phase: sits at
+         oa_planning's default goal (8.5, 0), past all three pillar rows.
+         Same model + pose convention Milestone 1 used (Tools/simulation/gz/
+         models/arucotag, on PX4-Autopilot's own GZ_SIM_RESOURCE_PATH):
+         DICT_4X4_50, id 0, 0.5x0.5m plane just above the floor. -->
+    <include><uri>model://arucotag</uri><name>landing_marker</name><pose>8.5 0 0.001 0 0 0</pose></include>
   </world>
 </sdf>

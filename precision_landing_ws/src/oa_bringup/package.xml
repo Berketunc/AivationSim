@@ -18,6 +18,7 @@
   <exec_depend>oa_control</exec_depend>
   <exec_depend>oa_vio</exec_depend>
   <exec_depend>ros_gz_image</exec_depend>
+  <exec_depend>pl_perception</exec_depend>
   <!-- ov_msckf/ov_core/ov_init are built separately at ~/open_vins (not a
        rosdep-known package name), sourced as an underlay — see README. -->
 

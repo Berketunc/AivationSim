@@ -16,6 +16,14 @@ here and was a real bug: the "nearest" waypoint by raw distance can be one
 further along the path, on the far side of an obstacle the path was
 deliberately routed around, which then had this controller cut straight
 through it to reach that "closer" point.
+
+Once the A* goal is reached, this hands off from waypoint-following to
+ArUco-marker landing (SEARCH_MARKER -> ALIGN_MARKER -> DESCEND_MARKER),
+reusing pl_control.landing_controller_node's PIController and align/descend
+approach directly (same airframe, same MavsdkBridge, same marker) — but
+embedded in this node's own state machine rather than a second MAVSDK-
+connected node, since two nodes can't safely share one offboard control
+loop on the same vehicle.
 """
 
 import math
@@ -25,25 +33,22 @@ from enum import Enum, auto
 
 import rclpy
 from rclpy.node import Node
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry, Path
 from std_msgs.msg import Bool
 
+from pl_control.landing_controller_node import PIController
 from pl_control.mavsdk_bridge import MavsdkBridge
 
 
 class State(Enum):
     INIT = auto()
     FOLLOW = auto()
-    GOAL_REACHED = auto()
+    SEARCH_MARKER = auto()
+    ALIGN_MARKER = auto()
+    DESCEND_MARKER = auto()
+    LANDED = auto()
     ABORT = auto()
-    # Triggered by oa_vio's divergence watchdog (sim-only — compares VIO
-    # against Gazebo ground truth, which doesn't exist on real hardware).
-    # MILESTONE2_STATUS.md's Component 6 divergence is large-but-finite
-    # before it's ever non-finite, so nothing in this controller's own data
-    # can tell good pose from bad — without an external check like the
-    # watchdog, the vehicle just keeps confidently navigating on garbage
-    # (confirmed: this is what sent it into a wall instead of stopping).
-    LOCALIZATION_LOST = auto()
 
 
 def _yaw_from_quaternion(q) -> float:
@@ -65,78 +70,49 @@ class PathFollowerNode(Node):
         self.declare_parameter('path_topic', '/oa/path')
         self.declare_parameter('odom_topic', '/oa/odom')
 
-        # This controller strafes (moves forward/right relative to current
-        # heading) and never yaws — yawspeed is always 0 in the normal
-        # FOLLOW state below. That's fine for flight, but it means VIO's
-        # dynamic initializer (oa_vio) can never get the rotational
-        # diversity it needs from normal flight alone, no matter how long it
-        # waits — confirmed empirically (gyroscope change stayed ~0.3deg,
-        # miles under its 10deg requirement, throughout an entire climb).
-        # This one-time post-takeoff yaw wiggle exists purely to give it
-        # that diversity before path-following (and its constant-yaw
-        # strafing) begins.
-        #
-        # MavsdkBridge.send_velocity_body's yawspeed is degrees/second
-        # (MAVSDK's VelocityBodyYawspeed.yawspeed_deg_s) — a first pass at
-        # this used 0.5 thinking it was rad/s, which produced only ~1.6deg
-        # of actual rotation (barely above the ~0.3deg baseline) instead of
-        # the intended ~57deg per leg.
-        #
-        # 30deg/s (the original value) rotates ~60deg over a 2s leg — far
-        # more than init_dyn_min_deg's 10deg requirement, and per MILESTONE2
-        # Component 6, the leading suspect for the post-init divergence is
-        # that fast yaw at that rate produces large per-frame optical flow
-        # that KLT can't hold onto against the warehouse's flat, low-texture
-        # surfaces (already tracking only 34-37 features against a 37.5
-        # default threshold with zero rotation). 12deg/s over the same 2s
-        # leg still clears the 10deg gate with margin (24deg/leg) while
-        # cutting peak angular rate, and therefore per-frame pixel flow,
-        # to <=40% of the original.
-        self.declare_parameter('vio_wiggle_enabled', True)
-        self.declare_parameter('vio_wiggle_yawspeed_deg_s', 12.0)
-        self.declare_parameter('vio_wiggle_leg_duration_s', 2.0)
-        # Pure in-place rotation satisfies init_dyn_min_deg's *number* but
-        # gives monocular VIO none of the translational parallax it
-        # actually needs for a well-conditioned scale/depth estimate —
-        # rotation-only motion is a textbook-degenerate case for
-        # monocular initialization. That's the leading hypothesis, per
-        # MILESTONE2_STATUS.md, for why init kept reporting "success" and
-        # then diverging almost immediately regardless of how much the
-        # tracker/texture/wiggle-rate tuning improved: none of that gave
-        # the initializer real baseline, only a cleaner-looking rotation.
-        # This adds genuine lateral (sideways) translation alongside the
-        # yaw, still in the same symmetric (+,-2,+) pattern so the vehicle
-        # roughly returns to where it started rather than drifting toward
-        # a wall — sideways relative to the forward-facing camera gives
-        # strong parallax on the features already in view, unlike
-        # fore/aft motion which barely displaces bearings to what's ahead.
-        self.declare_parameter('vio_wiggle_lateral_speed_ms', 0.4)
-        # Settle time between reaching offboard control and starting the
-        # wiggle: without this, the wiggle's rotation stacks on top of
-        # residual post-takeoff/post-climb translational transients, adding
-        # to the total motion the tracker has to survive right when the
-        # filter is most fragile (just before init). Let those settle out
-        # first so the wiggle is the only motion source.
-        self.declare_parameter('vio_wiggle_settle_s', 3.0)
-
         self.cruise_speed: float = self.get_parameter('cruise_speed_ms').value
         self.waypoint_radius: float = self.get_parameter('waypoint_reached_radius_m').value
         self.goal_radius: float = self.get_parameter('goal_reached_radius_m').value
         self.takeoff_alt: float = self.get_parameter('takeoff_altitude_m').value
         mavsdk_addr: str = self.get_parameter('mavsdk_address').value
         timer_hz: float = self.get_parameter('timer_hz').value
-        self.vio_wiggle_enabled: bool = self.get_parameter('vio_wiggle_enabled').value
-        self.vio_wiggle_yawspeed: float = self.get_parameter('vio_wiggle_yawspeed_deg_s').value
-        self.vio_wiggle_leg_s: float = self.get_parameter('vio_wiggle_leg_duration_s').value
-        self.vio_wiggle_lateral: float = self.get_parameter('vio_wiggle_lateral_speed_ms').value
-        self.vio_wiggle_settle_s: float = self.get_parameter('vio_wiggle_settle_s').value
 
         self.declare_parameter('hold_position_kp', 0.5)
         self.declare_parameter('hold_position_max_speed_ms', 0.3)
         self.hold_kp: float = self.get_parameter('hold_position_kp').value
         self.hold_max_speed: float = self.get_parameter('hold_position_max_speed_ms').value
 
-        self.declare_parameter('vio_diverged_topic', '/oa/vio/diverged')
+        # ── marker-landing parameters (see module docstring) ────────────────────
+        self.declare_parameter('marker_pose_topic', '/oa/landing/target_pose')
+        self.declare_parameter('marker_visible_topic', '/oa/landing/is_visible')
+        self.declare_parameter('marker_pi_kp', 0.5)
+        self.declare_parameter('marker_pi_ki', 0.05)
+        self.declare_parameter('marker_pi_integral_max', 0.5)
+        self.declare_parameter('marker_horizontal_vel_max', 1.0)
+        self.declare_parameter('marker_descend_vel_ms', 0.3)
+        self.declare_parameter('marker_hacc_radius_m', 0.20)
+        self.declare_parameter('marker_n_frames_aligned', 10)
+        self.declare_parameter('marker_final_land_alt_m', 0.5)
+        self.declare_parameter('marker_search_speed_ms', 0.2)
+        self.declare_parameter('marker_search_step_m', 0.5)
+        self.declare_parameter('marker_search_timeout_s', 20.0)
+        self.declare_parameter('marker_lost_timeout_s', 2.0)
+
+        marker_pi_kp = self.get_parameter('marker_pi_kp').value
+        marker_pi_ki = self.get_parameter('marker_pi_ki').value
+        marker_pi_i_max = self.get_parameter('marker_pi_integral_max').value
+        marker_v_max = self.get_parameter('marker_horizontal_vel_max').value
+        self.marker_pi_x = PIController(marker_pi_kp, marker_pi_ki, marker_pi_i_max, marker_v_max)
+        self.marker_pi_y = PIController(marker_pi_kp, marker_pi_ki, marker_pi_i_max, marker_v_max)
+
+        self.marker_descend_vel: float = self.get_parameter('marker_descend_vel_ms').value
+        self.marker_hacc_radius_m: float = self.get_parameter('marker_hacc_radius_m').value
+        self.marker_n_frames_aligned: int = self.get_parameter('marker_n_frames_aligned').value
+        self.marker_final_land_alt_m: float = self.get_parameter('marker_final_land_alt_m').value
+        self.marker_search_speed: float = self.get_parameter('marker_search_speed_ms').value
+        self.marker_search_step_m: float = self.get_parameter('marker_search_step_m').value
+        self.marker_search_timeout_s: float = self.get_parameter('marker_search_timeout_s').value
+        self.marker_lost_timeout_s: float = self.get_parameter('marker_lost_timeout_s').value
 
         # ── state ─────────────────────────────────────────────────────────────
         self.state = State.INIT
@@ -145,7 +121,13 @@ class PathFollowerNode(Node):
         self.current_pos = None   # (x, y, z)
         self.current_yaw = 0.0
         self.hold_pos = None      # anchor point while holding (see _hold_position)
-        self.localization_lost = False
+        self.last_tick_time = time.monotonic()
+
+        self.marker_pose: PoseStamped | None = None
+        self.marker_visible = False
+        self.marker_state_entry_time = time.monotonic()
+        self.marker_last_seen_time = time.monotonic()
+        self.marker_aligned_count = 0
 
         # ── bridge & subscriptions ────────────────────────────────────────────
         self.bridge = MavsdkBridge(system_address=mavsdk_addr)
@@ -155,7 +137,9 @@ class PathFollowerNode(Node):
         self.create_subscription(
             Odometry, self.get_parameter('odom_topic').value, self._odom_cb, 10)
         self.create_subscription(
-            Bool, self.get_parameter('vio_diverged_topic').value, self._diverged_cb, 10)
+            PoseStamped, self.get_parameter('marker_pose_topic').value, self._marker_pose_cb, 10)
+        self.create_subscription(
+            Bool, self.get_parameter('marker_visible_topic').value, self._marker_visible_cb, 10)
 
         # ── startup on background thread (keeps rclpy spin unblocked) ─────────
         threading.Thread(target=self._startup, daemon=True).start()
@@ -178,8 +162,11 @@ class PathFollowerNode(Node):
         self.current_pos = (p.x, p.y, p.z)
         self.current_yaw = _yaw_from_quaternion(msg.pose.pose.orientation)
 
-    def _diverged_cb(self, msg: Bool):
-        self.localization_lost = msg.data
+    def _marker_pose_cb(self, msg: PoseStamped):
+        self.marker_pose = msg
+
+    def _marker_visible_cb(self, msg: Bool):
+        self.marker_visible = msg.data
 
     # ── startup (background thread) ───────────────────────────────────────────
 
@@ -195,84 +182,39 @@ class PathFollowerNode(Node):
             self.bridge.start_offboard_loop()
             time.sleep(1.0)  # brief settle before handing off to the follower
 
-            if self.vio_wiggle_enabled:
-                self.get_logger().info(
-                    f'Holding still for {self.vio_wiggle_settle_s}s to let post-takeoff '
-                    'transients die out before wiggling...')
-                time.sleep(self.vio_wiggle_settle_s)
-                self._do_vio_wiggle()
-
             self.state = State.FOLLOW
         except Exception as exc:
             self.get_logger().error(f'Startup failed: {exc}')
             self.state = State.ABORT
 
-    def _do_vio_wiggle(self):
-        """Yaw one way then the other while also translating sideways,
-        purely so OpenVINS's dynamic initializer sees both the rotational
-        diversity its init_dyn_min_deg gate requires AND genuine
-        translational parallax before normal (constant-yaw) path-following
-        begins. See the vio_wiggle_* parameters' comment for why the
-        lateral component was added — pure in-place rotation satisfied the
-        gate's number without giving monocular VIO real baseline to work
-        with."""
-        self.get_logger().info('Wiggling (yaw + lateral translation) to help VIO initialize...')
-        leg = self.vio_wiggle_leg_s
-        yawspeed = self.vio_wiggle_yawspeed
-        lateral = self.vio_wiggle_lateral
-        for yaw_speed, right_speed in (
-            (yawspeed, lateral), (-2 * yawspeed, -2 * lateral), (yawspeed, lateral)
-        ):
-            end = time.monotonic() + leg
-            while time.monotonic() < end:
-                self.bridge.send_velocity_body(0.0, right_speed, 0.0, yaw_speed)
-                time.sleep(0.05)
-        self.bridge.send_velocity_body(0.0, 0.0, 0.0, 0.0)
-        self.get_logger().info('VIO wiggle done.')
-
     # ── control tick (main thread, ROS timer) ─────────────────────────────────
 
     def _tick(self):
-        # GOAL_REACHED must keep ticking, not just FOLLOW: _hold_position()
-        # is an *active* station-keeping correction (see its docstring —
-        # PX4 doesn't hold altitude perfectly under a constant velocity
-        # setpoint), and it needs to run every tick, not once. A guard of
-        # `!= State.FOLLOW` here would call it exactly once, right as the
-        # state transitions to GOAL_REACHED below, then never again — the
-        # 20Hz offboard loop just keeps re-sending that one stale setpoint
-        # forever, with zero further correction, and the vehicle quietly
-        # sinks onto the floor. Confirmed as the actual cause of "reaches
-        # the goal, then drifts down and lands on its own."
-        if self.state not in (State.FOLLOW, State.GOAL_REACHED):
+        if self.state in (State.INIT, State.ABORT, State.LANDED):
             return
 
-        if self.localization_lost:
-            # Confirmed root cause of "flies into a wall for no reason":
-            # VIO diverges to something large-but-finite (not NaN, so
-            # vio_odom_to_world's own filter doesn't catch it) well before
-            # it ever goes non-finite, and both this controller and
-            # oa_planning_node keep confidently navigating on it with no
-            # way to tell good pose from bad. oa_vio's divergence watchdog
-            # is the only thing that can — trust it and get on the ground
-            # under PX4's own controlled Action.land() rather than
-            # continuing to steer on bad data.
-            self.get_logger().error(
-                'VIO localization lost (see vio_divergence_watchdog) — landing now '
-                'instead of continuing to navigate on bad data.')
-            self.bridge.submit(self.bridge.land())
-            self.state = State.LOCALIZATION_LOST
-            return
+        now = time.monotonic()
+        dt = min(now - self.last_tick_time, 0.5)
+        self.last_tick_time = now
 
+        if self.state == State.FOLLOW:
+            self._do_follow()
+        elif self.state == State.SEARCH_MARKER:
+            self._do_marker_search(now)
+        elif self.state == State.ALIGN_MARKER:
+            self._do_marker_align(now, dt)
+        elif self.state == State.DESCEND_MARKER:
+            self._do_marker_descend(now, dt)
+
+    def _do_follow(self):
         if self.path is None or not self.path.poses or self.current_pos is None:
             self._hold_position()
             return
 
         target = self._advance_to_current_waypoint()
         if target is None:
-            if self.state != State.GOAL_REACHED:
-                self.state = State.GOAL_REACHED
-                self.get_logger().info('Goal reached — holding position.')
-            self._hold_position()
+            self.get_logger().info('Goal reached — searching for landing marker.')
+            self._enter_marker_search()
             return
 
         self.hold_pos = None  # actively navigating again; drop any stale anchor
@@ -288,6 +230,132 @@ class PathFollowerNode(Node):
         wx, wy, wz = (dx / dist) * speed, (dy / dist) * speed, (dz / dist) * speed
 
         self._send_world_velocity(wx, wy, wz)
+
+    # ── marker landing: SEARCH_MARKER -> ALIGN_MARKER -> DESCEND_MARKER ────────
+    #
+    # A* always plans to a goal placed exactly at the marker's (x, y) (see
+    # planner_params.yaml), so on arrival the marker should already be ~underfoot
+    # — SEARCH_MARKER mostly just waits out detector/tracking latency, with a
+    # bounded expanding-square scan as a fallback for residual position error
+    # rather than the wide-open-ground hunt pl_control's Milestone-1 search does.
+
+    # Body-frame unit vectors for the expanding-square fallback scan: forward,
+    # right, back, left.
+    _MARKER_SCAN_DIRS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+    _MARKER_SEARCH_GRACE_S = 2.0
+
+    def _enter_marker_search(self):
+        self.state = State.SEARCH_MARKER
+        self.marker_state_entry_time = time.monotonic()
+        self.marker_last_seen_time = time.monotonic()
+        self.hold_pos = self.current_pos
+
+    def _do_marker_search(self, now: float):
+        if self.marker_visible and self.marker_pose is not None:
+            self.get_logger().info('Landing marker acquired — aligning.')
+            self._enter_marker_align()
+            return
+
+        elapsed = now - self.marker_state_entry_time
+        if elapsed > self.marker_search_timeout_s:
+            self.get_logger().error(
+                f'Landing marker not found within {self.marker_search_timeout_s}s '
+                'of the goal — holding position rather than landing blind.')
+            self._hold_position()
+            return
+
+        if elapsed < self._MARKER_SEARCH_GRACE_S:
+            self._hold_position()
+            return
+
+        step_s = self.marker_search_step_m / self.marker_search_speed
+        scan_elapsed = elapsed - self._MARKER_SEARCH_GRACE_S
+        leg, t = 0, 0.0
+        while True:
+            leg_dur = (leg // 2 + 1) * step_s
+            if t + leg_dur > scan_elapsed:
+                break
+            t += leg_dur
+            leg += 1
+
+        dx, dy = self._MARKER_SCAN_DIRS[leg % 4]
+        self.bridge.send_velocity_body(
+            dx * self.marker_search_speed, dy * self.marker_search_speed, 0.0, 0.0)
+
+    def _enter_marker_align(self):
+        self.state = State.ALIGN_MARKER
+        self.marker_pi_x.reset()
+        self.marker_pi_y.reset()
+        self.marker_aligned_count = 0
+
+    def _do_marker_align(self, now: float, dt: float):
+        if not self._marker_visible_or_revert(now):
+            return
+
+        dx = self.marker_pose.pose.position.x
+        dy = self.marker_pose.pose.position.y
+        error = math.hypot(dx, dy)
+
+        vx = self.marker_pi_x.update(dx, dt)
+        vy = self.marker_pi_y.update(dy, dt)
+        self.bridge.send_velocity_body(vx, vy, 0.0, 0.0)
+
+        if error < self.marker_hacc_radius_m:
+            self.marker_aligned_count += 1
+        else:
+            self.marker_aligned_count = 0
+
+        if self.marker_aligned_count >= self.marker_n_frames_aligned:
+            self.state = State.DESCEND_MARKER
+            self.marker_pi_x.reset()
+            self.marker_pi_y.reset()
+
+    def _do_marker_descend(self, now: float, dt: float):
+        if not self._marker_visible_or_revert(now):
+            return
+
+        dx = self.marker_pose.pose.position.x
+        dy = self.marker_pose.pose.position.y
+        dz = self.marker_pose.pose.position.z   # AGL distance to marker (optical z)
+        error = math.hypot(dx, dy)
+
+        vx = self.marker_pi_x.update(dx, dt)
+        vy = self.marker_pi_y.update(dy, dt)
+
+        # Only descend when on-target; pause vz if drifting (do NOT reverse).
+        if error < self.marker_hacc_radius_m * 2.0:
+            vz = min(self.marker_descend_vel, dz * 0.3)
+        else:
+            vz = 0.0
+
+        self.bridge.send_velocity_body(vx, vy, vz, 0.0)
+
+        if dz < self.marker_final_land_alt_m:
+            self.get_logger().info(
+                f'Below {self.marker_final_land_alt_m}m — handing off to Action.land().')
+            self.state = State.LANDED
+            threading.Thread(target=self._land_async, daemon=True).start()
+
+    def _marker_visible_or_revert(self, now: float) -> bool:
+        """Return True if the marker is currently visible; otherwise, once
+        it's been gone longer than marker_lost_timeout_s, revert to
+        SEARCH_MARKER rather than continuing to align/descend on a stale
+        pose."""
+        if self.marker_visible and self.marker_pose is not None:
+            self.marker_last_seen_time = now
+            return True
+        lost_for = now - self.marker_last_seen_time
+        if lost_for > self.marker_lost_timeout_s:
+            self.get_logger().warn(f'Landing marker absent {lost_for:.1f}s — reverting to search.')
+            self._enter_marker_search()
+        return False
+
+    def _land_async(self):
+        try:
+            self.bridge.run(self.bridge.land(), timeout=60.0)
+            self.get_logger().info('Landed successfully.')
+        except Exception as exc:
+            self.get_logger().error(f'Action.land() failed: {exc}')
 
     def _hold_position(self):
         """Actively station-keep at a fixed anchor point, rather than just
