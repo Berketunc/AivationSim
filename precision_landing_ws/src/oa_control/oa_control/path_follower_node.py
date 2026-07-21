@@ -280,13 +280,37 @@ class PathFollowerNode(Node):
 
         dx, dy = self._MARKER_SCAN_DIRS[leg % 4]
         self.bridge.send_velocity_body(
-            dx * self.marker_search_speed, dy * self.marker_search_speed, 0.0, 0.0)
+            dx * self.marker_search_speed, dy * self.marker_search_speed,
+            self._altitude_hold_vz_down(), 0.0)
 
     def _enter_marker_align(self):
         self.state = State.ALIGN_MARKER
         self.marker_pi_x.reset()
         self.marker_pi_y.reset()
         self.marker_aligned_count = 0
+
+    def _altitude_hold_vz_down(self) -> float:
+        """Active altitude correction toward hold_pos's z (set at
+        _enter_marker_search, i.e. the altitude the goal was reached at),
+        in send_velocity_body's `down` convention (positive = descend).
+
+        SEARCH_MARKER's scan and ALIGN_MARKER both otherwise command xy
+        velocity directly rather than through _hold_position(), and a raw
+        vz=0 setpoint isn't held perfectly by PX4 (see _hold_position()'s
+        own docstring) — it sinks toward the floor. That was a brief,
+        single-tick bug the first time it was found (the GOAL_REACHED tick
+        guard fix); here it ran unnoticed for up to ~20s and was confirmed
+        live to sink the vehicle all the way to the floor (z=0.003) while
+        drifting over a meter off goal in xy — which is also what pushed
+        the marker out of frame during a 12s ALIGN_MARKER that should have
+        converged in under a second, well before SEARCH_MARKER's own copy
+        of the same bug ever ran.
+        """
+        if self.current_pos is None or self.hold_pos is None:
+            return 0.0
+        ez = self.hold_pos[2] - self.current_pos[2]
+        vz_up = max(-self.hold_max_speed, min(self.hold_max_speed, self.hold_kp * ez))
+        return -vz_up
 
     def _do_marker_align(self, now: float, dt: float):
         if not self._marker_visible_or_revert(now):
@@ -298,7 +322,7 @@ class PathFollowerNode(Node):
 
         vx = self.marker_pi_x.update(dx, dt)
         vy = self.marker_pi_y.update(dy, dt)
-        self.bridge.send_velocity_body(vx, vy, 0.0, 0.0)
+        self.bridge.send_velocity_body(vx, vy, self._altitude_hold_vz_down(), 0.0)
 
         if error < self.marker_hacc_radius_m:
             self.marker_aligned_count += 1

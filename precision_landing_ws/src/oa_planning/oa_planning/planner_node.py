@@ -32,6 +32,12 @@ class PlannerNode(Node):
         self.declare_parameter('odom_topic', '/oa/odom')
         self.declare_parameter('goal_topic', '/oa/goal_pose')
         self.declare_parameter('path_topic', '/oa/path')
+        # Matches oa_control's own goal_reached_radius_m: once within this of
+        # the goal, path_follower_node has already taken over (marker search/
+        # landing, see its module docstring) — replanning from here just
+        # spams "No path found" once the vehicle descends/moves off the
+        # planning grid's notion of "near the goal" during that handoff.
+        self.declare_parameter('goal_reached_radius_m', 0.3)
 
         resolution = self.get_parameter('resolution').value
         origin = tuple(self.get_parameter('origin').value)
@@ -40,8 +46,10 @@ class PlannerNode(Node):
         self._grid = OccupancyGrid3D(origin, size, resolution, inflation_radius_m)
 
         self._goal = tuple(self.get_parameter('goal').value)
+        self._goal_reached_radius_m = self.get_parameter('goal_reached_radius_m').value
         self._current_pos = None
         self._frame_id = None
+        self._logged_goal_reached = False
 
         self.create_subscription(
             PointCloud2, self.get_parameter('cloud_topic').value, self._on_cloud, 1)
@@ -68,11 +76,24 @@ class PlannerNode(Node):
     def _on_goal(self, msg: PoseStamped):
         p = msg.pose.position
         self._goal = (p.x, p.y, p.z)
+        self._logged_goal_reached = False
         self.get_logger().info(f'New goal: {self._goal}')
 
     def _plan_once(self):
         if self._current_pos is None:
             return
+
+        dx = self._current_pos[0] - self._goal[0]
+        dy = self._current_pos[1] - self._goal[1]
+        dz = self._current_pos[2] - self._goal[2]
+        if (dx * dx + dy * dy + dz * dz) ** 0.5 <= self._goal_reached_radius_m:
+            if not self._logged_goal_reached:
+                self.get_logger().info(
+                    'Within goal_reached_radius_m of the goal — stopping replanning; '
+                    'path_follower_node takes over from here.')
+                self._logged_goal_reached = True
+            return
+        self._logged_goal_reached = False
 
         # Expensive (O(occupied cells * offsets)) — do it once per replan,
         # not on every point-cloud callback.
