@@ -153,11 +153,13 @@ topic only appears once something subscribes to it).
 **Goal:** reframe the project from a pure classical-control demo into a
 quantitative research comparison: a learned residual RL policy outputs a
 corrective vector on top of the classical A* + trajectory-follower's proposed
-action, evaluated against the classical controller alone on five metrics —
-landing precision, success rate, trajectory efficiency, compute overhead, and
-robustness (via domain randomization). Planned staging is IL pretraining
-(near-zero-residual warm start) followed by RL fine-tuning, rather than RL
-from scratch.
+action, evaluated against the classical controller alone on four metrics —
+success rate, trajectory efficiency, compute overhead, and robustness (via
+domain randomization). Landing precision was dropped from the metric set:
+the RL task operates on the 2D navigation plane only (see `oa_rl` below), so
+landing isn't part of what this comparison measures. Planned staging is IL
+pretraining (near-zero-residual warm start) followed by RL fine-tuning,
+rather than RL from scratch.
 
 **Why not train through PX4 SITL + Gazebo:** real-time-locked lockstep
 simulation plus software-rendered Gazebo made single episodes take 60-190s;
@@ -169,11 +171,25 @@ transfer check that doubles as a robustness data point.
 **`oa_rl`:** an Isaac Lab "external project" (own `source/oa_rl` pip package,
 registered as gym env `Isaac-WarehouseAvoidance-Direct-v0`) reproducing
 `warehouse.sdf`'s room/pillar layout with a velocity-commanded drone. Actions
-are 2D (`vx`, `vy`) rather than 3D — this warehouse's pillars are
-floor-to-ceiling, so altitude offers no avoidance benefit — with altitude
-held by a small internal proportional controller. This first version proves
-the training loop runs end to end with a plain reward; IL pretraining, the
-residual-on-classical-controller architecture, and domain randomization are
+are 2D (`vx`, `vy`) rather than 3D, with altitude held by a small internal
+proportional controller instead of being learned. This wasn't a compute or
+efficiency call — it was forced by the environment: this warehouse's pillars
+are floor-to-ceiling (4.0m, taller than the 3.5m walls), so there's no
+altitude at which the maze can be flown over, and z-axis motion gives the
+policy zero obstacle-avoidance benefit. The first training run used 3D
+actions and confirmed this empirically rather than just in theory: the
+policy learned nothing useful (action std stuck near its initial value,
+100% of episodes ending in `out_of_bounds`) because the free but useless
+z-axis gave it an easy way to leave the play area without ever engaging with
+the actual 2D navigation problem. Constraining to `action_space=2` removed
+that failure mode. This also reframes what "goal reached" means for this
+RL task: successful 2D navigation to the goal region, not landing — physical
+descent/landing remains the classical FSM's job (Milestones 1-2) and is
+deliberately out of scope for the RL policy, which is also why landing
+precision was dropped from this milestone's metrics (see below). This first
+version proves the training loop runs end to end with a plain reward; IL
+pretraining, the residual-on-classical-controller architecture, and domain
+randomization are
 deliberately not part of it yet.
 
 **Run:**
@@ -191,15 +207,27 @@ python scripts/rsl_rl/train.py \
   --task Isaac-WarehouseAvoidance-Direct-v0 --headless --num_envs 64
 ```
 
-**Status:** environment design validated via a small correctness-check run
-(200 iterations × 4 envs, not real training). After fixing an action-space
-bug (3D → 2D) and a missing-wall bug specific to the RL scene, the agent
-survives ~7x longer than earlier broken runs and now fails exclusively on
-the intended target skill (pillar collision) rather than a structural issue
-— confirming collision avoidance is the correct dominant failure mode. Not
-yet attempted: a real-scale training run (larger `num_envs`/`max_iterations`),
-IL pretraining, the residual architecture, domain randomization, the full
-5-metric reward shaping, and sim-to-sim validation back in Gazebo/PX4.
+**Status:** a real-scale run from scratch (`num_envs=8192`,
+`max_iterations=5000`) solved obstacle avoidance outright (0% collision, 0%
+out-of-bounds) but exposed a reward-hacking bug: `goal_reached` never fired
+because per-step proximity reward, paid for the whole episode, was more
+profitable than the one-time goal bonus that ends it — so the policy learned
+to loiter just outside the goal radius instead of finishing. Fixed with
+potential-based reward shaping (Ng, Harada & Russell 1999): reward is now
+paid on *progress* toward the goal (a telescoping potential-difference term)
+rather than raw proximity, so loitering nets zero once progress stalls. A
+repeat of the same real-scale run confirms the fix: `goal_reached` jumped
+from 0% to 98.4%, `final_distance_to_goal` moved from 0.3015 (just outside
+the 0.3 goal radius) to 0.2495, and collision/out-of-bounds stayed at 0% —
+obstacle avoidance was preserved, not traded away for goal-reaching.
+
+This validates the environment and training pipeline, but is still a
+standalone policy trained from scratch, not the residual-on-classical
+comparison the milestone is about. Not yet attempted: the residual
+architecture (a classical-controller baseline isn't in this loop at all
+yet), IL pretraining, domain randomization, a classical baseline run through
+the same harness for an apples-to-apples comparison, and sim-to-sim
+validation back in Gazebo/PX4.
 
 ## Optional: real-hardware test (not attempted, not committed to)
 
