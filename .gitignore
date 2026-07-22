@@ -39,3 +39,7 @@ open_vins/
 
 # Working debug notes, not meant for version history
 MILESTONE2_STATUS.md
+
+# Isaac Lab RL training artifacts (checkpoints, TensorBoard logs, Hydra run dirs)
+oa_rl/logs/
+oa_rl/outputs/
