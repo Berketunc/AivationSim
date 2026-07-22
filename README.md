@@ -1,9 +1,11 @@
 # AviationSim
 
 A simulation-first autonomous-drone stack built on **PX4 SITL + Gazebo Harmonic +
-ROS 2 Jazzy + MAVSDK**, developed as a series of milestones. Everything here runs
-in simulation; a possible (not-yet-attempted) real-hardware follow-up is sketched
-at the bottom.
+ROS 2 Jazzy + MAVSDK**, developed as a series of milestones: classical
+vision-based control (Milestones 1-2), then a research pivot comparing that
+classical controller against a learned residual RL policy trained in NVIDIA
+Isaac Lab (Milestone 3). Everything here runs in simulation; a possible
+(not-yet-attempted) real-hardware follow-up is sketched at the bottom.
 
 ## Environment
 
@@ -13,7 +15,10 @@ at the bottom.
   why that matters)
 - Gazebo Harmonic (`gz-sim8`)
 - MAVSDK (Python, `mavsdk` pip package)
-- OpenCV with `cv2.aruco` support (Milestone 1 only)
+- OpenCV with `cv2.aruco` support (Milestone 1 & 2)
+- NVIDIA Isaac Sim 5.1 + Isaac Lab (cloned to `~/IsaacLab`), in a `uv`-managed
+  Python 3.11 venv at `~/lab` — a separate stack from ROS 2/PX4 above
+  (Milestone 3 only)
 
 ## Repo layout
 
@@ -24,13 +29,24 @@ AviationSim/
 │       ├── pl_perception/       Milestone 1: ArUco marker detection
 │       ├── pl_control/          Milestone 1: MAVSDK offboard bridge + landing FSM
 │       ├── pl_bringup/          Milestone 1: launch files + params
-│       └── (oa_bringup, oa_planning, oa_control land here as Milestone 2 progresses)
+│       ├── oa_bringup/          Milestone 2: LiDAR + pose bridging
+│       ├── oa_planning/         Milestone 2: 3D occupancy grid + A* planner
+│       ├── oa_control/          Milestone 2: MAVSDK trajectory follower +
+│       │                         post-course ArUco landing FSM
+│       └── oa_vio/              Unused appendix: OpenVINS VIO integration,
+│                                 removed from the active pipeline (see
+│                                 Milestone 2 below) but kept on disk
 ├── sim_assets/                  Gazebo worlds/models/airframes for Milestone 2,
 │                                 version-controlled here and symlinked into the
 │                                 PX4-Autopilot clone by scripts/link_gz_assets.sh
+├── oa_rl/                       Milestone 3: Isaac Lab RL task for the
+│                                 classical-vs-RL research pivot (kept outside
+│                                 ~/IsaacLab, same "engine external, project
+│                                 code in-repo" pattern as PX4-Autopilot/oa_vio)
 ├── scripts/
 │   ├── launch_sim.sh            One-command PX4 + Gazebo + ROS 2 launch (Milestone 1)
 │   ├── link_gz_assets.sh        Symlinks sim_assets/ into ~/PX4-Autopilot
+│   ├── build_openvins.sh        Builds the (now-unused) OpenVINS VIO dependency
 │   └── hover_test.py            Standalone MAVSDK hover smoke test
 └── README.md
 ```
@@ -80,19 +96,17 @@ directly below).
 
 **Goal:** fly a 3D-LiDAR-equipped drone through an indoor "warehouse" full of
 pillars without colliding, using a real-time occupancy map and an A* planner,
-running GPS-denied off VIO instead of Gazebo ground truth — the same
-control-law-level philosophy as Milestone 1, extended to full 3D navigation
-instead of a single downward marker.
+then hand off to a Milestone-1-style ArUco landing once the goal is reached.
 
 **Pipeline:**
 ```mermaid
 flowchart LR
     Lidar["x500_3d_lidar\n16-ch 360° gpu_lidar"] -->|PointCloud2| Bridge["oa_bringup\nsensor + pose bridge"]
-    VIO["OpenVINS\ncamera + IMU"] -->|pose estimate| Bridge
+    GZOdom["Gazebo ground-truth odometry"] -->|pose| Bridge
     Bridge --> Octomap["octomap_server\n3D occupancy map"]
     Octomap --> Planner["oa_planning\nA* over the octree"]
-    Planner -->|nav_msgs/Path| Follower["oa_control\nMAVSDK trajectory follower"]
-    Follower -->|MAVLink offboard| PX4_2["PX4 SITL"]
+    Planner -->|nav_msgs/Path| Follower["oa_control\npath_follower_node"]
+    Follower -->|MAVLink offboard, then\nSEARCH_MARKER → ALIGN → DESCEND| PX4_2["PX4 SITL"]
     PX4_2 <--> GZ_2["Gazebo (warehouse world)"]
 ```
 
@@ -100,16 +114,29 @@ A custom `warehouse.sdf` world (three rows of pillars in a bounded room, each
 row's gaps offset from the next so flying straight through one row's gap
 always puts a pillar from the next row directly ahead — a proper slalom, not
 a single detour) and an `x500_3d_lidar` vehicle model (a 16-channel,
-360°, gpu_lidar sensor mounted on the standard PX4 x500 quad) give the drone
-something real to navigate around. `oa_bringup` bridges the LiDAR's point
-cloud and the current pose estimate into ROS 2; `octomap_server` folds that
-into a running 3D occupancy map; `oa_planning` runs A* over the map to produce
-a collision-free path to the goal; `oa_control` walks that path and drives it
-via the same MAVSDK-offboard-over-a-background-asyncio-thread pattern
-Milestone 1's `mavsdk_bridge` uses. Localization comes from OpenVINS (camera +
-IMU) fed into PX4's EKF2 as an external vision source, rather than Gazebo's
-ground-truth pose — so, like Milestone 1, GPS is never actually relied upon by
-the navigation logic.
+360°, gpu_lidar sensor mounted on the standard PX4 x500 quad, plus a
+downward mono camera) give the drone something real to navigate around and,
+at the end, land on. `oa_bringup` bridges the LiDAR's point cloud and pose
+into ROS 2; `octomap_server` folds that into a running 3D occupancy map;
+`oa_planning` runs A* over the map to produce a collision-free path to the
+goal; `oa_control`'s `path_follower_node` walks that path via the same
+MAVSDK-offboard-over-a-background-asyncio-thread pattern Milestone 1's
+`mavsdk_bridge` uses, then — once the goal is reached — extends into
+`SEARCH_MARKER → ALIGN_MARKER → DESCEND_MARKER → LANDED` states reusing
+Milestone 1's `aruco_detector_node` and PI controller directly.
+
+**On GPS-denial:** an OpenVINS-based VIO pipeline (`oa_vio`) was built and
+wired in as a GPS-denied localization source, matching Milestone 1's
+philosophy, but ran into persistent divergence under this vehicle's motion
+profile with no guaranteed fix timeline. It was fully removed from the active
+pipeline (kept unused on disk as appendix/future-work material) in favor of
+Gazebo's ground-truth pose — a deliberate scope decision tied to the Milestone
+3 pivot below, where training/evaluating an RL policy needs privileged state
+anyway, so GPS-denial stopped being the load-bearing goal here.
+
+**Status:** verified end-to-end — takeoff, a full collision-free flight
+through all three pillar rows to the goal, then finds and lands on the ArUco
+marker placed there.
 
 **Run:**
 ```bash
@@ -120,6 +147,59 @@ PX4_GZ_WORLD=warehouse PX4_GZ_MODEL_POSE="-8.5,0,0.2,0,0,0" make px4_sitl gz_x50
 Then, with the sim running: `gz topic -l | grep scan` / `gz topic -e -t /scan/points`
 to see the live point cloud (the LiDAR sensor uses lazy publishing, so the
 topic only appears once something subscribes to it).
+
+## Milestone 3 — Research pivot: hybrid imitation + residual RL (Isaac Lab)
+
+**Goal:** reframe the project from a pure classical-control demo into a
+quantitative research comparison: a learned residual RL policy outputs a
+corrective vector on top of the classical A* + trajectory-follower's proposed
+action, evaluated against the classical controller alone on five metrics —
+landing precision, success rate, trajectory efficiency, compute overhead, and
+robustness (via domain randomization). Planned staging is IL pretraining
+(near-zero-residual warm start) followed by RL fine-tuning, rather than RL
+from scratch.
+
+**Why not train through PX4 SITL + Gazebo:** real-time-locked lockstep
+simulation plus software-rendered Gazebo made single episodes take 60-190s;
+RL realistically needs thousands to tens of thousands of episodes. Training
+instead runs in NVIDIA Isaac Lab (GPU-parallelized physics), with the trained
+policy later validated back in the full Gazebo/PX4 stack — a sim-to-sim
+transfer check that doubles as a robustness data point.
+
+**`oa_rl`:** an Isaac Lab "external project" (own `source/oa_rl` pip package,
+registered as gym env `Isaac-WarehouseAvoidance-Direct-v0`) reproducing
+`warehouse.sdf`'s room/pillar layout with a velocity-commanded drone. Actions
+are 2D (`vx`, `vy`) rather than 3D — this warehouse's pillars are
+floor-to-ceiling, so altitude offers no avoidance benefit — with altitude
+held by a small internal proportional controller. This first version proves
+the training loop runs end to end with a plain reward; IL pretraining, the
+residual-on-classical-controller architecture, and domain randomization are
+deliberately not part of it yet.
+
+**Run:**
+```bash
+cd oa_rl
+source ~/lab/bin/activate
+python -m pip install -e source/oa_rl   # first time only
+
+# Sanity check: package registration, scene spawn, reset/step cycle
+timeout 120 python scripts/random_agent.py \
+  --task Isaac-WarehouseAvoidance-Direct-v0 --num_envs 4 --headless
+
+# Train
+python scripts/rsl_rl/train.py \
+  --task Isaac-WarehouseAvoidance-Direct-v0 --headless --num_envs 64
+```
+
+**Status:** environment design validated via a small correctness-check run
+(200 iterations × 4 envs, not real training). After fixing an action-space
+bug (3D → 2D) and a missing-wall bug specific to the RL scene, the agent
+survives ~7x longer than earlier broken runs and now fails exclusively on
+the intended target skill (pillar collision) rather than a structural issue
+— confirming collision avoidance is the correct dominant failure mode. Not
+yet attempted: a real-scale training run (larger `num_envs`/`max_iterations`),
+IL pretraining, the residual architecture, domain randomization, the full
+5-metric reward shaping, and sim-to-sim validation back in Gazebo/PX4.
 
 ## Optional: real-hardware test (not attempted, not committed to)
 
