@@ -162,3 +162,16 @@ class WarehouseAvoidanceEnvCfg(DirectRLEnvCfg):
     time_penalty_scale = -0.5
     collision_penalty = -20.0
     goal_reached_bonus = 20.0
+    # First residual training run (no penalty) converged to a mean residual
+    # magnitude of ~0.82 m/s — close to saturating residual_action_scale's
+    # ~1.06 m/s combined-axis max, and comparable to classical_speed_mps
+    # itself. That's "RL overriding the classical controller", not "RL
+    # lightly correcting it" — this penalty (same per-second-rate style as
+    # time_penalty_scale) exists to push the residual back down toward
+    # actually-residual scale. -0.5 is a starting point, not yet tuned: at
+    # the unpenalized run's ~0.82 m/s average over a ~11.6s successful
+    # episode, this costs roughly -0.5 * 0.82 * 11.6 ≈ -4.8 total — a real
+    # but not dominant fraction of the ~20-28 magnitude the other reward
+    # terms operate at, deliberately small enough that it discourages rather
+    # than forbids using the residual where it's actually earning its keep.
+    residual_penalty_scale = -0.5

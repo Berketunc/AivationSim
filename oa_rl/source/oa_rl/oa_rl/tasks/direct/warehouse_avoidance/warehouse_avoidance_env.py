@@ -68,6 +68,9 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
 
         self._commanded_vel_xy = torch.zeros(self.num_envs, 2, device=self.device)
+        # Set for real every _pre_physics_step; zero here is just a placeholder
+        # (see _get_rewards's residual_penalty term).
+        self._last_residual_xy = torch.zeros(self.num_envs, 2, device=self.device)
         self._goal_reached = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._collided = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._out_of_bounds = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -107,7 +110,7 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
 
         self._episode_sums = {
             key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-            for key in ["distance_to_goal", "time_penalty", "collision", "goal_reached"]
+            for key in ["distance_to_goal", "time_penalty", "collision", "goal_reached", "residual_penalty"]
         }
         # Diagnostic only (how hard the residual is correcting the classical
         # controller) — tracked separately from _episode_sums so it logs
@@ -157,7 +160,9 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
             self._residual_magnitude_sum += residual.norm(dim=-1) * self.step_dt
             commanded = classical_vel_xy + residual
         else:
+            residual = torch.zeros_like(classical_vel_xy)
             commanded = classical_vel_xy
+        self._last_residual_xy = residual
 
         # Combined (classical + residual) is what's physically capped at
         # max_speed_mps, not either term alone — see cfg's comment.
@@ -261,6 +266,7 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
             * self.step_dt,
             "collision": self._collided.float() * self.cfg.collision_penalty,
             "goal_reached": self._goal_reached.float() * self.cfg.goal_reached_bonus,
+            "residual_penalty": self._last_residual_xy.norm(dim=-1) * self.cfg.residual_penalty_scale * self.step_dt,
         }
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
         for key, value in rewards.items():
