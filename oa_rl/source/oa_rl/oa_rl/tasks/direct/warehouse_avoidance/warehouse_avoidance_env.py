@@ -22,6 +22,15 @@ This is a bare, plain-reward RL task meant to prove the training loop works
 end to end. The residual-on-classical-controller architecture, IL
 pretraining, domain randomization, and the final 5-metric reward shaping are
 deliberately not part of this version.
+
+Residual-on-classical architecture (see classical_controller.py): the policy
+action is a correction added to a precomputed classical flow-field
+controller's proposed velocity (see _pre_physics_step), not a standalone
+command — matching the research pivot's plan of a learned residual on top of
+the classical A*+follower stack. Setting cfg.use_residual_action=False
+ignores the policy action entirely and runs the classical controller alone,
+giving the classical baseline through this same harness with no training
+required.
 """
 
 from __future__ import annotations
@@ -33,6 +42,7 @@ from isaaclab.assets import RigidObject
 from isaaclab.envs import DirectRLEnv
 from isaaclab.markers import CUBOID_MARKER_CFG, VisualizationMarkers
 
+from .classical_controller import GoalFlowField
 from .warehouse_avoidance_env_cfg import (
     CRUISE_ALTITUDE_Z,
     DRONE_COLLISION_RADIUS,
@@ -81,10 +91,28 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
             [[s[0] / 2, s[1] / 2] for _, s in WALLS], device=self.device, dtype=torch.float32
         )
 
+        # Classical half of the residual architecture (see module docstring
+        # and classical_controller.py) — one Dijkstra solve at construction,
+        # queried every step in _pre_physics_step/_get_observations.
+        self._flow_field = GoalFlowField(
+            grid_origin_xy=GRID_ORIGIN[:2],
+            grid_size_xy=GRID_SIZE[:2],
+            goal_xy=GOAL_XY,
+            pillar_xy=list(PILLAR_XY),
+            pillar_half_xy=(PILLAR_SIZE[0] / 2, PILLAR_SIZE[1] / 2),
+            wall_xy=[w[0][:2] for w in WALLS],
+            wall_half_xy=[(s[0] / 2, s[1] / 2) for _, s in WALLS],
+            device=self.device,
+        )
+
         self._episode_sums = {
             key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
             for key in ["distance_to_goal", "time_penalty", "collision", "goal_reached"]
         }
+        # Diagnostic only (how hard the residual is correcting the classical
+        # controller) — tracked separately from _episode_sums so it logs
+        # under "Metrics/" rather than "Episode_Reward/" in _reset_idx.
+        self._residual_magnitude_sum = torch.zeros(self.num_envs, device=self.device)
 
         self.set_debug_vis(self.cfg.debug_vis)
 
@@ -117,8 +145,25 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
+    def _classical_velocity_xy(self) -> torch.Tensor:
+        pos_local_xy = self._local_pos()[:, :2]
+        return self._flow_field.direction_at(pos_local_xy) * self.cfg.classical_speed_mps
+
     def _pre_physics_step(self, actions: torch.Tensor):
-        self._commanded_vel_xy = actions.clone().clamp(-1.0, 1.0) * self.cfg.max_speed_mps
+        classical_vel_xy = self._classical_velocity_xy()
+
+        if self.cfg.use_residual_action:
+            residual = actions.clone().clamp(-1.0, 1.0) * self.cfg.residual_action_scale
+            self._residual_magnitude_sum += residual.norm(dim=-1) * self.step_dt
+            commanded = classical_vel_xy + residual
+        else:
+            commanded = classical_vel_xy
+
+        # Combined (classical + residual) is what's physically capped at
+        # max_speed_mps, not either term alone — see cfg's comment.
+        speed = commanded.norm(dim=-1, keepdim=True)
+        scale = torch.clamp(self.cfg.max_speed_mps / speed.clamp(min=1e-6), max=1.0)
+        self._commanded_vel_xy = commanded * scale
 
     def _apply_action(self):
         # Re-issued every physics substep (DirectRLEnv.step()'s decimation
@@ -160,6 +205,9 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
         pos_local = self._local_pos()
         goal_rel_xy = self._goal_xy - pos_local[:, :2]
         lin_vel_xy = self._robot.data.root_lin_vel_w[:, :2]
+        # So the policy can see what it's correcting, not just infer it —
+        # standard practice for residual-on-a-base-controller architectures.
+        classical_vel_xy = self._classical_velocity_xy()
 
         drone_xy = pos_local[:, :2].unsqueeze(1)
         rel_xy = self._pillar_xy.unsqueeze(0) - drone_xy
@@ -180,7 +228,7 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
             dim=-1,
         )
 
-        obs = torch.cat([goal_rel_xy, lin_vel_xy, nearest_rel_flat, clearance], dim=-1)
+        obs = torch.cat([goal_rel_xy, lin_vel_xy, classical_vel_xy, nearest_rel_flat, clearance], dim=-1)
         return {"policy": obs}
 
     @staticmethod
@@ -269,7 +317,10 @@ class WarehouseAvoidanceEnv(DirectRLEnv):
         extras["Episode_Termination/out_of_bounds"] = torch.count_nonzero(self._out_of_bounds[env_ids]).item()
         extras["Episode_Termination/time_out"] = torch.count_nonzero(self.reset_time_outs[env_ids]).item()
         extras["Metrics/final_distance_to_goal"] = final_distance_to_goal.item()
+        if self.cfg.use_residual_action:
+            extras["Metrics/mean_residual_magnitude"] = torch.mean(self._residual_magnitude_sum[env_ids]).item()
         self.extras["log"].update(extras)
+        self._residual_magnitude_sum[env_ids] = 0.0
 
         self._robot.reset(env_ids)
         super()._reset_idx(env_ids)

@@ -78,8 +78,13 @@ class WarehouseAvoidanceEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 45.0
     decimation = 4
-    action_space = 2  # (vx, vy) — see the CRUISE_ALTITUDE_Z comment above for why z is excluded
-    observation_space = 2 + 2 + 2 * K_NEAREST_PILLARS + 4  # goal_rel_xy, lin_vel_xy, nearest pillars, wall clearance
+    # (vx, vy) — see the CRUISE_ALTITUDE_Z comment above for why z is
+    # excluded. Under use_residual_action (below), this is a *correction* on
+    # top of the classical controller's proposed velocity, not a standalone
+    # command — see classical_controller.py and the env's _pre_physics_step.
+    action_space = 2
+    # goal_rel_xy, lin_vel_xy, classical_vel_xy, nearest pillars, wall clearance
+    observation_space = 2 + 2 + 2 + 2 * K_NEAREST_PILLARS + 4
     state_space = 0
     # Off by default: the goal-marker VisualizationMarkers instancer is a
     # likely cause of a real hang seen during headless verification (Kit
@@ -126,10 +131,25 @@ class WarehouseAvoidanceEnvCfg(DirectRLEnvCfg):
     )
 
     # Deliberately faster than the real controller's conservative
-    # cruise_speed_ms=0.4 (control_params.yaml) — this v1 task is a bare RL
-    # warm-up to prove the training loop works, not yet compared against the
-    # classical baseline, so matching that number isn't required here.
+    # cruise_speed_ms=0.4 (control_params.yaml) — kept as the hard cap on
+    # total commanded speed (classical + residual combined, see
+    # _pre_physics_step) rather than tied to either term individually.
     max_speed_mps = 1.5
+
+    # Residual-on-classical architecture (see classical_controller.py).
+    # use_residual_action=True: the policy's action is a correction added to
+    # classical_controller.GoalFlowField's proposed velocity, clamped in
+    # total to max_speed_mps. use_residual_action=False: the action is
+    # ignored entirely and the env runs the classical controller alone —
+    # this is the classical baseline for the same harness/metrics (no
+    # training needed, any rollout — e.g. random_agent.py — measures it).
+    use_residual_action = True
+    # Below max_speed_mps so the residual has real headroom to add on top
+    # rather than immediately saturating the total-speed clamp.
+    classical_speed_mps = 1.0
+    # Max per-axis magnitude (m/s) the residual can add/subtract before the
+    # combined (classical + residual) velocity is clamped to max_speed_mps.
+    residual_action_scale = 0.75
 
     # Internal (non-learned) altitude hold — see the CRUISE_ALTITUDE_Z
     # comment above. Fast enough to correct quickly since this isn't
